@@ -1,0 +1,6 @@
+{
+  "name": "PocketOps",
+  "description": "Mobile-first developer operations platform for GitHub code workflows, Render deployments, health monitoring, and incident response.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

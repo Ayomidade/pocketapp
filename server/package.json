@@ -1,0 +1,43 @@
+{
+  "name": "@pocketops/server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PocketOps backend API, GitHub/Render integrations, and BullMQ workers",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js",
+    "worker": "node src/jobs/worker.js",
+    "db:migrate": "sequelize-cli db:migrate",
+    "db:migrate:undo": "sequelize-cli db:migrate:undo",
+    "db:seed": "sequelize-cli db:seed:all",
+    "lint": "eslint src tests",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@octokit/auth-app": "^7.1.2",
+    "bullmq": "^5.34.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "expo-server-sdk": "^3.12.0",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.0.0",
+    "ioredis": "^5.4.2",
+    "jsonwebtoken": "^9.0.2",
+    "octokit": "^4.1.0",
+    "pg": "^8.13.3",
+    "pg-hstore": "^2.3.4",
+    "pino": "^9.6.0",
+    "pino-http": "^10.4.0",
+    "sequelize": "^6.37.5",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "eslint": "^9.18.0",
+    "sequelize-cli": "^6.6.2",
+    "sqlite3": "^5.1.7",
+    "supertest": "^7.0.0",
+    "vitest": "^2.1.8"
+  }
+}

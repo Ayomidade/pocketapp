@@ -1,0 +1,146 @@
+openapi: 3.1.0
+info:
+  title: PocketOps Operational API
+  version: 1.0.0
+  description: REST API for PocketOps mobile developer operations platform.
+servers:
+  - url: /api/v1
+paths:
+  /auth/github/start:
+    post:
+      summary: Initiate GitHub PKCE OAuth authorization
+      responses:
+        '200':
+          description: Authorize URL and state token
+  /auth/github/exchange:
+    post:
+      summary: Exchange OAuth code for PocketOps access and refresh session
+      responses:
+        '200':
+          description: Access token, refresh token, and user profile
+  /auth/refresh:
+    post:
+      summary: Rotate refresh token with replay detection
+      responses:
+        '200':
+          description: New access and refresh tokens
+  /auth/me:
+    get:
+      summary: Get authenticated PocketOps user
+      responses:
+        '200':
+          description: Authenticated user
+  /integrations/overview:
+    get:
+      summary: Get GitHub OAuth, GitHub App installations, and Render connection status
+      responses:
+        '200':
+          description: Integration overview
+  /integrations/github/installations/verify:
+    post:
+      summary: Verify GitHub App installation ownership and sync authorized repositories
+      responses:
+        '200':
+          description: Verified installation and repo count
+  /integrations/render/connect:
+    post:
+      summary: Verify and encrypt Render API key at rest
+      responses:
+        '200':
+          description: Connected Render account metadata
+  /projects:
+    get:
+      summary: List projects with linked repos and services
+      responses:
+        '200':
+          description: Project list
+    post:
+      summary: Create project
+      responses:
+        '201':
+          description: Created project
+  /repositories:
+    get:
+      summary: List authorized GitHub repositories
+      responses:
+        '200':
+          description: Repository list
+  /repositories/{id}/contents:
+    get:
+      summary: Browse repository directory tree or decode file blob with SHA
+      responses:
+        '200':
+          description: Directory listing or file content
+  /repositories/{id}/commits:
+    post:
+      summary: Commit file with mandatory expectedSha check and Idempotency-Key
+      responses:
+        '201':
+          description: Commit created
+        '409':
+          description: Remote revision conflict
+  /repositories/{id}/pulls:
+    post:
+      summary: Create pull request with Idempotency-Key
+      responses:
+        '201':
+          description: Pull request created
+  /services/discover:
+    post:
+      summary: Discover and sync Render services
+      responses:
+        '200':
+          description: Discovered services
+  /services/{id}/redeploy:
+    post:
+      summary: Trigger confirmed production redeploy with Idempotency-Key
+      responses:
+        '201':
+          description: Deployment started
+  /services/{id}/health-check:
+    post:
+      summary: Execute manual HTTP health probe
+      responses:
+        '200':
+          description: Health check result
+  /incidents:
+    get:
+      summary: List active or resolved incidents
+      responses:
+        '200':
+          description: Incident list
+    post:
+      summary: Open incident and emit alert notification
+      responses:
+        '201':
+          description: Created incident
+  /incidents/{id}/resolve:
+    post:
+      summary: Explicitly resolve incident with confirmation and Idempotency-Key
+      responses:
+        '200':
+          description: Resolved incident
+  /ops/dashboard:
+    get:
+      summary: Aggregated operational dashboard telemetry
+      responses:
+        '200':
+          description: Dashboard payload
+  /ops/notifications:
+    get:
+      summary: Persistent notification center history
+      responses:
+        '200':
+          description: Notification list
+  /webhooks/github:
+    post:
+      summary: HMAC-SHA256 verified GitHub webhook intake
+      responses:
+        '202':
+          description: Accepted
+  /webhooks/render:
+    post:
+      summary: Render deployment webhook intake
+      responses:
+        '202':
+          description: Accepted

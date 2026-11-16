@@ -1,0 +1,23 @@
+{
+  "name": "pocketops-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PocketOps — Mobile-first developer operations platform (Expo React Native + Node.js/Express + PostgreSQL + BullMQ)",
+  "workspaces": [
+    "mobile",
+    "server"
+  ],
+  "scripts": {
+    "dev:server": "npm --workspace=server run dev",
+    "dev:worker": "npm --workspace=server run worker",
+    "dev:mobile": "npm --workspace=mobile run start",
+    "migrate": "npm --workspace=server run db:migrate",
+    "seed": "npm --workspace=server run db:seed",
+    "test:server": "npm --workspace=server test",
+    "test:mobile": "npm --workspace=mobile test",
+    "lint:server": "npm --workspace=server run lint",
+    "lint:mobile": "npm --workspace=mobile run lint",
+    "lint": "npm run lint:server && npm run lint:mobile",
+    "test": "npm run test:server && npm run test:mobile"
+  }
+}
