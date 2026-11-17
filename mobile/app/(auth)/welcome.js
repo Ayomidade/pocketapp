@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Text } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import { useRouter } from 'expo-router';
 import { ScreenContainer } from '../../src/components/ScreenContainer';
-import { RelayBrandMark } from '../../src/components/RelayBrandMark';
-import { SignalBanner, SignalCard } from '../../src/components/SignalCard';
+import { SignalBanner } from '../../src/components/SignalCard';
+import { ContextCard } from '../../src/components/ContextCard';
 import { PrimaryButton, SecondaryButton } from '../../src/components/Buttons';
 import { ModuleHeader } from '../../src/components/ModuleHeader';
 import { useTheme } from '../../src/theme/ThemeProvider';
@@ -91,58 +91,28 @@ export default function WelcomeScreen() {
     </ScreenContainer>;
   }
 
+  return <WelcomeContent onSignIn={handleGitHubSignIn} loading={loading} />;
+}
+
+export function WelcomeContent({ onSignIn, loading = false }) {
+  const { colors, typography } = useTheme();
   return (
     <ScreenContainer>
       <ModuleHeader code="ON" title="Welcome" />
-      <View style={styles.heroWrap}>
-        <RelayBrandMark size={42} variant="dark" />
-      </View>
-
       <SignalBanner>
-        <Text style={[typography.caption, { color: colors.primary }]}>SECURE ACCESS</Text>
-        <Text style={[typography.heading, { color: colors.textPrimary, marginTop: 4 }]}>
+        <Text style={[typography.badge, { color: colors.primary }]}>SECURE ACCESS</Text>
+        <Text style={[typography.title, { color: colors.textPrimary, marginTop: 8 }]}>
           Your workspace, wherever you are
         </Text>
-        <Text style={[typography.body, { color: colors.textSecondary, marginTop: 4 }]}>
-          Explore your repositories, review changes, and respond to production issues.
+        <Text style={[typography.caption, { color: colors.textSecondary, marginTop: 8 }]}>
+          Explore GitHub repositories, review changes and respond to production issues.
         </Text>
       </SignalBanner>
-
-      <SignalCard>
-        <Text style={[typography.heading, { color: colors.textPrimary }]}>Repository access</Text>
-        <Text style={[typography.caption, { color: colors.textSecondary, marginTop: 4 }]}>
-          Sign in with GitHub, then choose which repositories the GitHub App can access.
-        </Text>
-      </SignalCard>
-
-      <SignalCard>
-        <Text style={[typography.heading, { color: colors.textPrimary }]}>Operations</Text>
-        <Text style={[typography.caption, { color: colors.textSecondary, marginTop: 4 }]}>
-          Inspect Render build & runtime logs, confirm redeployments explicitly, and verify health recovery.
-        </Text>
-      </SignalCard>
-
-      <PrimaryButton
-        label={
-          authStep === 'exchanging'
-            ? 'Finishing sign in...'
-            : authStep === 'oauth'
-            ? 'Waiting for GitHub...'
-            : 'Continue with GitHub'
-        }
-        loading={loading}
-        onPress={handleGitHubSignIn}
-        style={{ marginTop: 6 }}
-      />
+      <ContextCard title="Repository context" description="Choose which repositories the GitHub App can access." />
+      <ContextCard title="Operation state" description="Review changes and confirm actions before they run." />
+      <ContextCard title="Verification" description="Check current provider data before acting." />
+      <PrimaryButton label="Continue with GitHub" loading={loading} onPress={onSignIn} align="left" />
+      <Text style={[typography.caption, { color: colors.textSecondary, marginTop: 14 }]}>Secure sign-in with GitHub</Text>
     </ScreenContainer>
   );
 }
-
-const styles = StyleSheet.create({
-  heroWrap: {
-    backgroundColor: '#0B1F36',
-    borderRadius: 18,
-    padding: 12,
-    marginBottom: 14,
-  },
-});

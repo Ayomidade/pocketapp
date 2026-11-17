@@ -10,6 +10,7 @@ export function PrimaryButton({
   tone = 'primary', // 'primary' | 'danger'
   accessibilityLabel,
   style,
+  align = 'center',
 }) {
   const { colors, radii, typography } = useTheme();
   const bgColor = tone === 'danger' ? colors.critical : colors.primary;
@@ -25,6 +26,7 @@ export function PrimaryButton({
         styles.base,
         {
           backgroundColor: bgColor,
+          justifyContent: align === 'left' ? 'flex-start' : 'center',
           borderRadius: radii.button,
           opacity: disabled ? 0.5 : pressed ? 0.85 : 1,
         },

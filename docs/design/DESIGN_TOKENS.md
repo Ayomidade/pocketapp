@@ -28,3 +28,7 @@
 
 ## Relay Brand Conflict Resolution
 - Relay brand colors (`#0B1F36`, `#FF7A59`, `#00D4B3`, `#F5F7FA`) are restricted to launcher icons, splash screen, Welcome hero (`ON-01`), and About (`ST-12`) so they never conflict with Critical (`#A52F2A`) or Verified (`#246C4B`) operational telemetry.
+
+## Measured reference geometry (audit)
+
+ON-01 and HM-01 screen SVGs use a 393 × 852 canvas, 18 px left inset, a 50 × 34 header mark with 8 px radius, and a banner starting at x=18, y=103 with width 342 and radius 15. ON-01 banner height is 144; HM-01 banner height is 120. Their example outlined cards have 66 px height and 11.5 px radius on the stroked rectangle. Component primary and secondary exports are 360 × 64 with 10 px radius; do not assume these sheet canvas dimensions are the in-screen button dimensions. All figures are SVG coordinates, not validated device-independent sizes. Text is outlined; font family, weight, and precise typographic metrics cannot be extracted from SVG text attributes.

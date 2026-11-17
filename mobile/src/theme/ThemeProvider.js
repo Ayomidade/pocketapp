@@ -5,7 +5,7 @@ import { useAppStore } from '../store/useAppStore';
 
 const ThemeContext = createContext(null);
 
-export function ThemeProvider({ children }) {
+export function ThemeProvider({ children, previewMode }) {
   const systemScheme = useColorScheme();
   const themePreference = useAppStore((s) => s.themePreference);
   const highContrast = useAppStore((s) => s.highContrast);
@@ -13,11 +13,11 @@ export function ThemeProvider({ children }) {
 
   const value = useMemo(() => {
     const resolvedMode =
-      themePreference === 'system'
+      previewMode || (themePreference === 'system'
         ? systemScheme === 'dark'
           ? 'dark'
           : 'light'
-        : themePreference;
+        : themePreference);
 
     const baseColors = resolvedMode === 'dark' ? signalDark : signalLight;
     const colors = highContrast
@@ -38,7 +38,7 @@ export function ThemeProvider({ children }) {
       reducedMotion,
       highContrast,
     };
-  }, [systemScheme, themePreference, highContrast, reducedMotion]);
+  }, [systemScheme, themePreference, highContrast, reducedMotion, previewMode]);
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }

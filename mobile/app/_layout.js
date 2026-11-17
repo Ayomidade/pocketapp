@@ -1,3 +1,4 @@
+/* global __DEV__ */
 import React, { useEffect } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -8,6 +9,7 @@ import { ThemeProvider, useTheme } from '../src/theme/ThemeProvider';
 import { useAuthStore } from '../src/store/useAuthStore';
 import { apiRequest } from '../src/services/apiClient';
 import { getAccessToken } from '../src/security/tokenStorage';
+import { DesignPreview } from '../src/preview/DesignPreview';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -87,11 +89,13 @@ function RootNavigator() {
 }
 
 export default function RootLayout() {
+  const preview = __DEV__ && process.env.EXPO_PUBLIC_DESIGN_PREVIEW === 'true';
+  const previewMode = process.env.EXPO_PUBLIC_DESIGN_THEME === 'dark' ? 'dark' : 'light';
   return (
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>
-        <ThemeProvider>
-          <RootNavigator />
+        <ThemeProvider previewMode={preview ? previewMode : undefined}>
+          {preview ? <DesignPreview /> : <RootNavigator />}
         </ThemeProvider>
       </QueryClientProvider>
     </SafeAreaProvider>

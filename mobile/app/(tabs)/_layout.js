@@ -1,10 +1,10 @@
 import React from 'react';
-import { Pressable, Text, View } from 'react-native';
 import { Tabs } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { apiRequest } from '../../src/services/apiClient';
+import { BottomNavigation } from '../../src/components/BottomNavigation';
 
 export default function TabsLayout() {
   const { colors } = useTheme();
@@ -19,22 +19,23 @@ export default function TabsLayout() {
 
   return (
     <Tabs
-      tabBar={({ state, descriptors, navigation }) => (
-        <View style={{ flexDirection: 'row', backgroundColor: colors.surface, borderTopColor: colors.border, borderTopWidth: 1, paddingBottom: insets.bottom }}>
-          {state.routes.map((route, index) => {
-            const { options } = descriptors[route.key];
-            if (route.name === 'services' || route.name === 'inbox' || options.tabBarItemStyle?.display === 'none') return null;
-            const focused = state.index === index;
-            const title = options.title || route.name;
-            return <Pressable key={route.key} accessibilityRole="tab" accessibilityState={{ selected: focused }} accessibilityLabel={route.name === 'activity' && unreadCount ? `${title}, ${unreadCount} unread notifications` : title} onPress={() => {
-              const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
-              if (!focused && !event.defaultPrevented) navigation.navigate(route.name, route.params);
-            }} onLongPress={() => navigation.emit({ type: 'tabLongPress', target: route.key })} style={{ flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ fontSize: 11, fontWeight: focused ? '700' : '500', color: focused ? colors.primary : colors.textSecondary, textAlign: 'center' }}>{title}{route.name === 'activity' && unreadCount ? ` (${unreadCount})` : ''}</Text>
-            </Pressable>;
-          })}
-        </View>
-      )}
+      tabBar={({ state, descriptors, navigation }) => <BottomNavigation items={state.routes.flatMap((route, index) => {
+        const { options } = descriptors[route.key];
+        if (route.name === 'services' || route.name === 'inbox' || options.tabBarItemStyle?.display === 'none') return [];
+        const selected = state.index === index;
+        const title = options.title || route.name;
+        return [{
+          key: route.key,
+          title: route.name === 'activity' && unreadCount ? `${title} (${unreadCount})` : title,
+          selected,
+          accessibilityLabel: route.name === 'activity' && unreadCount ? `${title}, ${unreadCount} unread notifications` : title,
+          onPress: () => {
+            const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+            if (!selected && !event.defaultPrevented) navigation.navigate(route.name, route.params);
+          },
+          onLongPress: () => navigation.emit({ type: 'tabLongPress', target: route.key }),
+        }];
+      })} />}
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: colors.primary,

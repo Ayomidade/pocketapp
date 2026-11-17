@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ScreenContainer } from '../../src/components/ScreenContainer';
 import { ModuleHeader } from '../../src/components/ModuleHeader';
 import { SignalBanner, SignalCard } from '../../src/components/SignalCard';
+import { ContextCard } from '../../src/components/ContextCard';
 import { PrimaryButton, SecondaryButton } from '../../src/components/Buttons';
 import { StatusBadge } from '../../src/components/StatusBadge';
 import { EmptyState, ErrorState, LoadingState } from '../../src/components/StateViews';
@@ -13,14 +14,19 @@ import { useTheme } from '../../src/theme/ThemeProvider';
 import { apiRequest } from '../../src/services/apiClient';
 
 export default function OperationalDashboardScreen() {
-  const router = useRouter();
-  const { colors, typography, radii } = useTheme();
-  const [quickActionsVisible, setQuickActionsVisible] = useState(false);
-
-  const { data, dataUpdatedAt, isLoading, error, refetch, isRefetching } = useQuery({
+  const query = useQuery({
     queryKey: ['dashboard'],
     queryFn: () => apiRequest('/ops/dashboard'),
   });
+
+  return <DashboardContent {...query} />;
+}
+
+export function DashboardContent({ data, dataUpdatedAt, isLoading, error, refetch, isRefetching, preview = false }) {
+  const navigation = useRouter();
+  const router = preview ? { push: () => {} } : navigation;
+  const { colors, typography, radii } = useTheme();
+  const [quickActionsVisible, setQuickActionsVisible] = useState(false);
 
   if (isLoading) {
     return (
@@ -42,28 +48,7 @@ export default function OperationalDashboardScreen() {
         contentContainerStyle={styles.scrollPad}
         refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
       >
-        <ModuleHeader
-          code="HM"
-          title="Operational dashboard"
-          rightAction={
-            <View style={styles.headerActions}>
-              <Pressable
-                onPress={() => router.push('/search')}
-                accessibilityLabel="Global Search"
-                style={[styles.iconBtn, { borderColor: colors.border, backgroundColor: colors.surface, borderRadius: radii.pill }]}
-              >
-                <Ionicons name="search-outline" size={20} color={colors.textPrimary} />
-              </Pressable>
-              <Pressable
-                onPress={() => router.push('/settings')}
-                accessibilityLabel="Account and Settings"
-                style={[styles.iconBtn, { borderColor: colors.border, backgroundColor: colors.surface, borderRadius: radii.pill }]}
-              >
-                <Ionicons name="settings-outline" size={20} color={colors.textPrimary} />
-              </Pressable>
-            </View>
-          }
-        />
+        <ModuleHeader code="HM" title="Operational dashboard" />
 
         {error ? (
           <ErrorState
@@ -78,6 +63,22 @@ export default function OperationalDashboardScreen() {
           <Text style={[typography.title, { color: colors.textPrimary, marginTop: 8 }]}>{activeIncidents.length ? 'Production needs attention' : data.isFirstUse ? 'Set up your workspace' : 'Your operational overview'}</Text>
           <Text style={[typography.caption, { color: colors.textSecondary, marginTop: 8 }]}>{activeIncidents.length ? `${activeIncidents.length} active ${activeIncidents.length === 1 ? 'incident' : 'incidents'} to review.` : 'Review incidents, service health, and recent deployments.'}</Text>
         </SignalBanner> : null}
+
+        {data ? <>
+          <ContextCard title="Repository context" description={services.find((service) => service.repoFullName)?.repoFullName || 'No linked repository in service data'} />
+          <ContextCard title="Operation state" description={deployments.length ? `${deployments.length} recent ${deployments.length === 1 ? 'deployment' : 'deployments'} available` : 'No recent deployment recorded'} />
+          <ContextCard title="Verification" description={dataUpdatedAt ? `Dashboard refreshed ${new Date(dataUpdatedAt).toLocaleString()}` : 'Check current provider data before acting'} />
+          {activeIncidents.length ? <PrimaryButton label="Investigate incident" align="left" onPress={() => router.push(`/incidents/${activeIncidents[0].id}`)} style={{ marginBottom: 14 }} /> : null}
+        </> : null}
+
+        <View style={[styles.headerActions, { marginBottom: 14 }]}>
+          <Pressable onPress={() => router.push('/search')} accessibilityRole="button" accessibilityLabel="Global search" style={[styles.iconBtn, { borderColor: colors.border, backgroundColor: colors.surface, borderRadius: radii.pill }]}>
+            <Ionicons name="search-outline" size={20} color={colors.textPrimary} />
+          </Pressable>
+          <Pressable onPress={() => router.push('/settings')} accessibilityRole="button" accessibilityLabel="Account and settings" style={[styles.iconBtn, { borderColor: colors.border, backgroundColor: colors.surface, borderRadius: radii.pill }]}>
+            <Ionicons name="settings-outline" size={20} color={colors.textPrimary} />
+          </Pressable>
+        </View>
 
         {problems.length > 0 ? (
           <SignalCard style={{ borderColor: colors.warning, backgroundColor: colors.warningBg }}>
