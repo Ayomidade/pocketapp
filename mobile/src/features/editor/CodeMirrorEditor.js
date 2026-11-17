@@ -18,6 +18,7 @@ export function CodeMirrorEditor({
   const [ready, setReady] = useState(false);
 
   const html = useMemo(() => buildCodeMirrorHtml({ isDark }), [isDark]);
+  const source = useMemo(() => ({ html }), [html]);
 
   const sendCommand = (type, payload = {}) => {
     if (!webViewRef.current) return;
@@ -74,7 +75,7 @@ export function CodeMirrorEditor({
         <WebView
           ref={webViewRef}
           originWhitelist={['about:blank', 'data:*', 'https://esm.sh']}
-          source={{ html }}
+          source={source}
           onMessage={handleMessage}
           javaScriptEnabled
           domStorageEnabled={false}

@@ -97,9 +97,11 @@ export function buildCodeMirrorHtml({ isDark }) {
         break;
       case 'UNDO':
         if (view && cmUndo) cmUndo(view);
+        else { fallbackEl.focus(); document.execCommand('undo'); }
         break;
       case 'REDO':
         if (view && cmRedo) cmRedo(view);
+        else { fallbackEl.focus(); document.execCommand('redo'); }
         break;
       case 'INSERT_TEXT':
         if (view) {
@@ -121,6 +123,11 @@ export function buildCodeMirrorHtml({ isDark }) {
           const lineInfo = view.state.doc.line(targetLine);
           view.dispatch({ selection: { anchor: lineInfo.from }, scrollIntoView: true });
           view.focus();
+        } else {
+          const lines = fallbackEl.value.split('\\n');
+          const offset = lines.slice(0, Math.min(lineNum - 1, lines.length - 1)).reduce((n, line) => n + line.length + 1, 0);
+          fallbackEl.focus();
+          fallbackEl.setSelectionRange(offset, offset);
         }
         break;
       }
@@ -136,6 +143,14 @@ export function buildCodeMirrorHtml({ isDark }) {
               selection: { anchor: idx, head: idx + query.length },
               scrollIntoView: true,
             });
+          }
+        } else if (query) {
+          const docText = fallbackEl.value;
+          let idx = docText.toLowerCase().indexOf(query.toLowerCase(), fallbackEl.selectionEnd);
+          if (idx === -1) idx = docText.toLowerCase().indexOf(query.toLowerCase());
+          if (idx !== -1) {
+            fallbackEl.focus();
+            fallbackEl.setSelectionRange(idx, idx + query.length);
           }
         }
         break;
@@ -205,7 +220,14 @@ export function buildCodeMirrorHtml({ isDark }) {
     }
   }
 
-  bootCodeMirror();
+  // The plain-text editor stays available offline and avoids incompatible CDN module versions.
+  document.getElementById('editor').style.display = 'none';
+  fallbackEl.style.display = 'block';
+  fallbackEl.addEventListener('input', () => {
+    currentContent = fallbackEl.value;
+    post('CONTENT_CHANGED', { content: currentContent });
+  });
+  post('READY', { engine: 'offline-fallback' });
 </script>
 </body>
 </html>`;

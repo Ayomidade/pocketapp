@@ -1,4 +1,10 @@
-require('dotenv').config();
+const path = require('path');
+const dotenv = require('dotenv');
+
+// Workspace commands run from server/, while shared settings live at the repo root.
+// Keep process variables and server-specific settings ahead of the shared defaults.
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 const { z } = require('zod');
 
 const envSchema = z.object({

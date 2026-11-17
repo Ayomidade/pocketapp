@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "description": "PocketOps — Mobile-first developer operations platform (Expo React Native + Node.js/Express + PostgreSQL + BullMQ)",
+  "overrides": {
+    "expo-font": "~13.0.4"
+  },
   "workspaces": [
     "mobile",
     "server"

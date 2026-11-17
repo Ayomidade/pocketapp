@@ -189,7 +189,7 @@ export default function RepositoryExplorerScreen() {
               SHA: {contentsData.file.sha.slice(0, 12)} · Branch: {activeBranch}
             </Text>
             <PrimaryButton
-              label="Edit in CodeMirror 6 (ED-01)"
+              label="Edit File"
               onPress={() => handleOpenInEditor(contentsData.file)}
               style={{ marginTop: 12 }}
             />
