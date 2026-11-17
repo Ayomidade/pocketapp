@@ -3,7 +3,8 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const { z } = require('zod');
 const env = require('../../config/env');
-const { User, Session, OAuthState, GithubConnection, NotificationPreference } = require('../../database/models');
+const { User, Session, OAuthState, NotificationPreference } = require('../../database/models');
+const { saveGithubConnection } = require('./githubConnection');
 const { encryptSecret, sha256Hex, generatePkcePair, generateStateToken } = require('../../utils/crypto');
 const {
   buildGithubOAuthAuthorizeUrl,
@@ -126,9 +127,7 @@ router.post('/github/exchange', validateBody(exchangeSchema), async (req, res, n
       avatarUrl: ghUser.avatarUrl,
     });
 
-    await GithubConnection.upsert({
-      id: crypto.randomUUID(),
-      userId: user.id,
+    await saveGithubConnection(user.id, {
       githubUserId: ghUser.githubId,
       githubLogin: ghUser.username,
       encryptedAccessToken: encryptSecret(tokenPayload.access_token),

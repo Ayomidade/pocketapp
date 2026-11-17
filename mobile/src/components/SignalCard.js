@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '../theme/ThemeProvider';
 
 export function SignalCard({ children, onPress, style, accessibilityLabel }) {
@@ -44,6 +44,17 @@ export function SignalBanner({ children, style }) {
     >
       {children}
     </View>
+  );
+}
+
+export function SignalIntro({ eyebrow, title, description }) {
+  const { colors, typography } = useTheme();
+  return (
+    <SignalBanner>
+      {eyebrow ? <Text style={[typography.badge, { color: colors.primary }]}>{eyebrow.toUpperCase()}</Text> : null}
+      <Text accessibilityRole="header" style={[typography.title, { color: colors.textPrimary, marginTop: eyebrow ? 8 : 0 }]}>{title}</Text>
+      {description ? <Text style={[typography.caption, { color: colors.textSecondary, marginTop: 8 }]}>{description}</Text> : null}
+    </SignalBanner>
   );
 }
 

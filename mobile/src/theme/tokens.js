@@ -76,11 +76,11 @@ export const radii = {
 };
 
 export const typography = {
-  title: { fontSize: 22, fontWeight: '700', lineHeight: 28 },
-  heading: { fontSize: 17, fontWeight: '600', lineHeight: 22 },
-  body: { fontSize: 15, fontWeight: '400', lineHeight: 21 },
-  bodyBold: { fontSize: 15, fontWeight: '600', lineHeight: 21 },
-  caption: { fontSize: 13, fontWeight: '500', lineHeight: 18 },
-  badge: { fontSize: 12, fontWeight: '700', lineHeight: 16 },
+  title: { fontSize: 20, fontWeight: '700', lineHeight: 25 },
+  heading: { fontSize: 16, fontWeight: '600', lineHeight: 21 },
+  body: { fontSize: 14, fontWeight: '400', lineHeight: 20 },
+  bodyBold: { fontSize: 14, fontWeight: '600', lineHeight: 20 },
+  caption: { fontSize: 12, fontWeight: '500', lineHeight: 17 },
+  badge: { fontSize: 10, fontWeight: '700', lineHeight: 14 },
   mono: { fontFamily: 'monospace', fontSize: 13, lineHeight: 19 },
 };

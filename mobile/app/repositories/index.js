@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { ScreenContainer } from '../../src/components/ScreenContainer';
 import { ModuleHeader } from '../../src/components/ModuleHeader';
-import { SignalCard } from '../../src/components/SignalCard';
+import { SignalBanner, SignalCard } from '../../src/components/SignalCard';
 import { StatusBadge } from '../../src/components/StatusBadge';
 import { EmptyState, ErrorState, LoadingState } from '../../src/components/StateViews';
 import { useTheme } from '../../src/theme/ThemeProvider';
@@ -24,10 +24,15 @@ export default function RepositoriesLibraryScreen() {
     <ScreenContainer>
       <ModuleHeader
         code="RP"
-        title="Authorized Repositories"
-        subtitle="GitHub App authorized repositories ready for mobile browsing and safe edits"
+        title="Global repository library"
         showBack
       />
+
+      <SignalBanner>
+        <Text style={[typography.badge, { color: colors.primary }]}>GITHUB</Text>
+        <Text style={[typography.title, { color: colors.textPrimary, marginTop: 8 }]}>Authorized repositories</Text>
+        <Text style={[typography.caption, { color: colors.textSecondary, marginTop: 8 }]}>Browse repositories available through your GitHub App installation.</Text>
+      </SignalBanner>
 
       <TextInput
         value={search}
@@ -46,10 +51,10 @@ export default function RepositoriesLibraryScreen() {
       {!isLoading && !error && (data?.repositories || []).length === 0 ? (
         <EmptyState
           icon="git-branch-outline"
-          title="No Authorized Repositories"
-          description="Install and verify the PocketOps GitHub App in Settings to grant access to specific repositories."
-          actionLabel="Open Connections"
-          onAction={() => router.push('/settings')}
+          title={search.trim() ? 'No matching repositories' : 'No authorized repositories'}
+          description={search.trim() ? 'Try a different repository or owner name.' : 'Install and verify the PocketOps GitHub App in Settings to grant access to repositories.'}
+          actionLabel={search.trim() ? 'Clear search' : 'Open connections'}
+          onAction={search.trim() ? () => setSearch('') : () => router.push('/settings')}
         />
       ) : (
         (data?.repositories || []).map((repo) => (
@@ -75,5 +80,5 @@ export default function RepositoriesLibraryScreen() {
 
 const styles = StyleSheet.create({
   input: { borderWidth: 1, minHeight: 48, paddingHorizontal: 14, marginBottom: 14, fontSize: 15 },
-  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  rowBetween: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
 });

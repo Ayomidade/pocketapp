@@ -6,7 +6,8 @@ const jwt = require('jsonwebtoken');
 const request = require('supertest');
 
 const env = require('../src/config/env');
-const { sequelize, User, Session } = require('../src/database/models');
+const { sequelize, User, Session, RenderConnection, Service, AuditLog, GithubConnection, GithubInstallation, AuthorizedRepository } = require('../src/database/models');
+const { saveGithubConnection } = require('../src/modules/auth/githubConnection');
 const { createApp } = require('../src/app');
 const { sha256Hex } = require('../src/utils/crypto');
 
@@ -61,6 +62,47 @@ describe('PocketOps API v1 Integration Suite', () => {
     const unauth = await request(app).get('/api/v1/projects');
     expect(unauth.status).toBe(401);
     expect(unauth.body.error.code).toBe('UNAUTHORIZED');
+  });
+
+  it('updates the existing GitHub connection on repeated sign-in', async () => {
+    const values = { githubUserId: '123', githubLogin: 'relay-ops', encryptedAccessToken: 'first', scopes: 'read:user', status: 'active' };
+    const first = await saveGithubConnection(user.id, values);
+    const second = await saveGithubConnection(user.id, { ...values, encryptedAccessToken: 'second' });
+    expect(second.id).toBe(first.id);
+    expect(await GithubConnection.count({ where: { userId: user.id } })).toBe(1);
+    expect(second.encryptedAccessToken).toBe('second');
+  });
+
+  it('distinguishes inaccessible repository states without exposing another user’s repository', async () => {
+    const installation = await GithubInstallation.create({ id: crypto.randomUUID(), userId: user.id, installationId: 998877, accountLogin: 'relay-ops', status: 'verified' });
+    const repo = await AuthorizedRepository.create({ id: crypto.randomUUID(), userId: user.id, installationId: installation.id, githubRepoId: 42, fullName: 'relay-ops/example', owner: 'relay-ops', name: 'example', active: false });
+    const getRepo = (id) => request(app).get(`/api/v1/repositories/${id}`).set('Authorization', `Bearer ${accessToken}`);
+    expect((await getRepo(repo.id)).body.error.code).toBe('REPOSITORY_ACCESS_REVOKED');
+    await installation.update({ status: 'suspended' });
+    expect((await getRepo(repo.id)).body.error.code).toBe('INSTALLATION_UNVERIFIED');
+    expect((await getRepo(crypto.randomUUID())).body.error.code).toBe('REPOSITORY_NOT_FOUND');
+  });
+
+  it('rejects unavailable project links without removing existing links', async () => {
+    const connection = await RenderConnection.create({ id: crypto.randomUUID(), userId: user.id, encryptedApiKey: 'test' });
+    const service = await Service.create({ id: crypto.randomUUID(), userId: user.id, renderConnectionId: connection.id, renderServiceId: 'test-service', name: 'Test service' });
+    const created = await request(app).post('/api/v1/projects').set('Authorization', `Bearer ${accessToken}`).send({ name: 'Linked project', serviceIds: [service.id] });
+    expect(created.status).toBe(201);
+    const projectId = created.body.project.id;
+    expect(created.body.project.services).toHaveLength(1);
+    const rejected = await request(app).put(`/api/v1/projects/${projectId}/links`).set('Authorization', `Bearer ${accessToken}`).send({ serviceIds: [crypto.randomUUID()] });
+    expect(rejected.status).toBe(400);
+    const current = await request(app).get(`/api/v1/projects/${projectId}`).set('Authorization', `Bearer ${accessToken}`);
+    expect(current.body.project.services.map((item) => item.id)).toContain(service.id);
+    await AuditLog.create({ id: crypto.randomUUID(), userId: user.id, action: 'service.test', resourceType: 'service', resourceId: service.id, outcome: 'success' });
+    await AuditLog.create({ id: crypto.randomUUID(), userId: user.id, action: 'unrelated.test', resourceType: 'service', resourceId: crypto.randomUUID(), outcome: 'success' });
+    const otherUser = await User.create({ id: crypto.randomUUID(), githubId: 'gh-other', username: 'other-user' });
+    await AuditLog.create({ id: crypto.randomUUID(), userId: otherUser.id, action: 'other-user.test', resourceType: 'service', resourceId: service.id, outcome: 'success' });
+    const withActivity = await request(app).get(`/api/v1/projects/${projectId}`).set('Authorization', `Bearer ${accessToken}`);
+    expect(withActivity.body.activity.map((item) => item.action)).toEqual(expect.arrayContaining(['project.created', 'service.test']));
+    expect(withActivity.body.activity.map((item) => item.action)).not.toEqual(expect.arrayContaining(['unrelated.test', 'other-user.test']));
+    const badCreate = await request(app).post('/api/v1/projects').set('Authorization', `Bearer ${accessToken}`).send({ name: 'Invalid links', repositoryIds: [crypto.randomUUID()] });
+    expect(badCreate.status).toBe(400);
   });
 
   it('rotates refresh tokens and revokes entire session family on replay reuse', async () => {

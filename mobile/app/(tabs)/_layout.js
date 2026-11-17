@@ -1,12 +1,14 @@
 import React from 'react';
+import { Pressable, Text, View } from 'react-native';
 import { Tabs } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { apiRequest } from '../../src/services/apiClient';
 
 export default function TabsLayout() {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const { data: dash } = useQuery({
     queryKey: ['dashboard'],
     queryFn: () => apiRequest('/ops/dashboard'),
@@ -17,6 +19,22 @@ export default function TabsLayout() {
 
   return (
     <Tabs
+      tabBar={({ state, descriptors, navigation }) => (
+        <View style={{ flexDirection: 'row', backgroundColor: colors.surface, borderTopColor: colors.border, borderTopWidth: 1, paddingBottom: insets.bottom }}>
+          {state.routes.map((route, index) => {
+            const { options } = descriptors[route.key];
+            if (route.name === 'services' || route.name === 'inbox' || options.tabBarItemStyle?.display === 'none') return null;
+            const focused = state.index === index;
+            const title = options.title || route.name;
+            return <Pressable key={route.key} accessibilityRole="tab" accessibilityState={{ selected: focused }} accessibilityLabel={route.name === 'activity' && unreadCount ? `${title}, ${unreadCount} unread notifications` : title} onPress={() => {
+              const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+              if (!focused && !event.defaultPrevented) navigation.navigate(route.name, route.params);
+            }} onLongPress={() => navigation.emit({ type: 'tabLongPress', target: route.key })} style={{ flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 11, fontWeight: focused ? '700' : '500', color: focused ? colors.primary : colors.textSecondary, textAlign: 'center' }}>{title}{route.name === 'activity' && unreadCount ? ` (${unreadCount})` : ''}</Text>
+            </Pressable>;
+          })}
+        </View>
+      )}
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: colors.primary,
@@ -24,10 +42,10 @@ export default function TabsLayout() {
         tabBarStyle: {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
-          height: 64,
-          paddingBottom: 8,
-          paddingTop: 6,
+          height: 48 + insets.bottom,
+          paddingBottom: insets.bottom,
         },
+        tabBarItemStyle: { justifyContent: 'center', minHeight: 48 },
         tabBarLabelStyle: {
           fontSize: 11,
           fontWeight: '600',
@@ -38,36 +56,43 @@ export default function TabsLayout() {
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color, size }) => <Ionicons name="pulse-outline" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="projects"
         options={{
           title: 'Projects',
-          tabBarIcon: ({ color, size }) => <Ionicons name="folder-open-outline" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="services"
         options={{
-          title: 'Services',
-          tabBarIcon: ({ color, size }) => <Ionicons name="server-outline" size={size} color={color} />,
+          href: null,
         }}
       />
       <Tabs.Screen
         name="incidents"
         options={{
           title: 'Incidents',
-          tabBarIcon: ({ color, size }) => <Ionicons name="warning-outline" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="inbox"
         options={{
-          title: 'Inbox',
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="activity"
+        options={{
+          title: 'Activity',
           tabBarBadge: unreadCount > 0 ? unreadCount : undefined,
-          tabBarIcon: ({ color, size }) => <Ionicons name="notifications-outline" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="you"
+        options={{
+          title: 'You',
         }}
       />
     </Tabs>

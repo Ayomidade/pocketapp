@@ -4,18 +4,21 @@ import { WebView } from 'react-native-webview';
 import { useTheme } from '../../theme/ThemeProvider';
 import { BRIDGE_VERSION, buildCodeMirrorHtml } from './codeMirrorHtml';
 
-const ALLOWED_BRIDGE_TYPES = new Set(['READY', 'CONTENT_CHANGED', 'CURSOR_STATE', 'ERROR']);
+const ALLOWED_BRIDGE_TYPES = new Set(['READY', 'CONTENT_CHANGED', 'CURSOR_STATE', 'SEARCH_RESULT', 'ERROR']);
 
 export function CodeMirrorEditor({
   filePath,
   content,
   onChangeContent,
   onCursorChange,
+  onSearchResult,
   editorRef,
 }) {
   const { isDark, colors, typography, radii } = useTheme();
   const webViewRef = useRef(null);
+  const editorContent = useRef(null);
   const [ready, setReady] = useState(false);
+  const [editorNotice, setEditorNotice] = useState('');
 
   const html = useMemo(() => buildCodeMirrorHtml({ isDark }), [isDark]);
   const source = useMemo(() => ({ html }), [html]);
@@ -38,10 +41,11 @@ export function CodeMirrorEditor({
   }, [editorRef]);
 
   useEffect(() => {
-    if (ready) {
+    if (ready && editorContent.current !== content) {
       sendCommand('LOAD_FILE', { filePath, content });
+      editorContent.current = content;
     }
-  }, [ready, filePath]);
+  }, [ready, filePath, content]);
 
   const handleMessage = (event) => {
     try {
@@ -52,10 +56,16 @@ export function CodeMirrorEditor({
       if (msg.type === 'READY') {
         setReady(true);
         sendCommand('LOAD_FILE', { filePath, content });
+        editorContent.current = content;
       } else if (msg.type === 'CONTENT_CHANGED') {
+        editorContent.current = msg.payload?.content ?? '';
         onChangeContent?.(msg.payload?.content ?? '');
       } else if (msg.type === 'CURSOR_STATE') {
         onCursorChange?.(msg.payload);
+      } else if (msg.type === 'SEARCH_RESULT') {
+        onSearchResult?.(msg.payload);
+      } else if (msg.type === 'ERROR') {
+        setEditorNotice(msg.payload?.message || 'Editor unavailable.');
       }
     } catch {
       // Ignore malformed bridge payloads
@@ -66,6 +76,7 @@ export function CodeMirrorEditor({
 
   return (
     <View style={styles.wrapper}>
+      {editorNotice ? <Text accessibilityLiveRegion="polite" style={[typography.caption, { color: colors.warning }]}>{editorNotice}</Text> : null}
       <View
         style={[
           styles.editorBox,
@@ -74,8 +85,9 @@ export function CodeMirrorEditor({
       >
         <WebView
           ref={webViewRef}
-          originWhitelist={['about:blank', 'data:*', 'https://esm.sh']}
+          originWhitelist={['about:blank', 'data:*']}
           source={source}
+          onLoadStart={() => { setReady(false); editorContent.current = null; }}
           onMessage={handleMessage}
           javaScriptEnabled
           domStorageEnabled={false}

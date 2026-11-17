@@ -34,7 +34,7 @@ export function PrimaryButton({
       {loading ? (
         <ActivityIndicator size="small" color={txtColor} />
       ) : (
-        <Text style={[typography.bodyBold, { color: txtColor }]}>{label}</Text>
+        <Text style={[typography.bodyBold, styles.label, { color: txtColor }]}>{label}</Text>
       )}
     </Pressable>
   );
@@ -67,7 +67,7 @@ export function SecondaryButton({
         style,
       ]}
     >
-      <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>{label}</Text>
+      <Text style={[typography.bodyBold, styles.label, { color: colors.textPrimary }]}>{label}</Text>
     </Pressable>
   );
 }
@@ -81,4 +81,5 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
   },
+  label: { flexShrink: 1, textAlign: 'center' },
 });

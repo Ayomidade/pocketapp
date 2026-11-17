@@ -15,7 +15,15 @@
 .cxx
 local.properties
 .env
+.env.*
+!.env.example
 debug.keystore
+*.keystore
+*.jks
+*.apk
+*.aab
+*.log
+coverage/
 node_modules
 mobile/.expo/
 mobile/android/

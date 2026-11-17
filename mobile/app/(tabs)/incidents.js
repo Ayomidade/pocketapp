@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ScreenContainer } from '../../src/components/ScreenContainer';
 import { ModuleHeader } from '../../src/components/ModuleHeader';
-import { SignalCard } from '../../src/components/SignalCard';
+import { SignalBanner, SignalCard } from '../../src/components/SignalCard';
 import { PrimaryButton, SecondaryButton } from '../../src/components/Buttons';
 import { StatusBadge } from '../../src/components/StatusBadge';
 import { EmptyState, ErrorState, LoadingState } from '../../src/components/StateViews';
@@ -46,9 +46,10 @@ export default function IncidentsTabScreen() {
       >
         <ModuleHeader
           code="IN"
-          title="Incident Inbox"
-          subtitle="Structured triage, mitigation, recovery verification, and audit timeline"
+          title="Incident inbox"
         />
+
+        <SignalBanner><Text style={[typography.badge, { color: colors.primary }]}>INCIDENTS</Text><Text style={[typography.title, { color: colors.textPrimary, marginTop: 8 }]}>Incident inbox</Text><Text style={[typography.caption, { color: colors.textSecondary, marginTop: 8 }]}>Review active incidents and their recovery evidence.</Text></SignalBanner>
 
         {/* Active / Resolved Segmented Filter (IN-01 vs IN-10) */}
         <View style={[styles.segmentRow, { backgroundColor: colors.bannerMuted, borderRadius: radii.button }]}>
@@ -77,10 +78,10 @@ export default function IncidentsTabScreen() {
             title={filter === 'active' ? 'No Active Incidents' : 'No Resolved Incidents'}
             description={
               filter === 'active'
-                ? 'All monitored services are clear. Declare an incident manually if you spot an anomaly.'
+                ? 'No active incidents are recorded. Declare an incident if you spot an anomaly.'
                 : 'Resolved incidents with complete timelines appear here.'
             }
-            actionLabel={filter === 'active' ? 'Create Incident (IN-02)' : undefined}
+            actionLabel={filter === 'active' ? 'Create Incident' : undefined}
             onAction={filter === 'active' ? () => setCreateOpen(true) : undefined}
           />
         ) : (
@@ -110,10 +111,11 @@ export default function IncidentsTabScreen() {
       </ScrollView>
 
       {/* IN-02 Create Incident Modal */}
-      <Modal visible={createOpen} transparent animationType="slide" onRequestClose={() => setCreateOpen(false)}>
+      <Modal visible={createOpen} transparent animationType="slide" onRequestClose={() => { if (!createMutation.isPending) setCreateOpen(false); }}>
         <View style={styles.modalBackdrop}>
-          <View style={[styles.modalSheet, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <ScrollView style={[styles.modalSheet, { backgroundColor: colors.surface, borderColor: colors.border }]} contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
             <Text style={[typography.title, { color: colors.textPrimary }]}>Declare Incident</Text>
+            <Text style={[typography.caption, { color: colors.textSecondary, marginTop: 6 }]}>Record the impact and choose the incident severity.</Text>
             <View style={styles.sevRow}>
               {['P1', 'P2', 'P3'].map((sev) => (
                 <Pressable
@@ -161,8 +163,9 @@ export default function IncidentsTabScreen() {
               onPress={() => createMutation.mutate({ title: title.trim(), summary: summary.trim(), severity })}
               style={{ marginTop: 14 }}
             />
-            <SecondaryButton label="Cancel" onPress={() => setCreateOpen(false)} style={{ marginTop: 10 }} />
-          </View>
+            {createMutation.error ? <ErrorState title="Could not create incident" message={createMutation.error.message} /> : null}
+            <SecondaryButton label="Cancel" disabled={createMutation.isPending} onPress={() => setCreateOpen(false)} style={{ marginTop: 10 }} />
+          </ScrollView>
         </View>
       </Modal>
     </ScreenContainer>
@@ -173,9 +176,10 @@ const styles = StyleSheet.create({
   scrollPad: { paddingHorizontal: 18, paddingBottom: 32, maxWidth: 640, width: '100%', alignSelf: 'center' },
   segmentRow: { flexDirection: 'row', padding: 4, marginBottom: 14 },
   segmentBtn: { flex: 1, minHeight: 42, alignItems: 'center', justifyContent: 'center' },
-  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  rowBetween: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' },
-  modalSheet: { padding: 20, borderTopLeftRadius: 20, borderTopRightRadius: 20, borderTopWidth: 1 },
+  modalSheet: { paddingHorizontal: 20, maxHeight: '85%', borderTopLeftRadius: 20, borderTopRightRadius: 20, borderTopWidth: 1 },
+  modalContent: { paddingTop: 20, paddingBottom: 28 },
   sevRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
   sevBtn: { flex: 1, minHeight: 48, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   input: { borderWidth: 1, minHeight: 48, paddingHorizontal: 14, marginTop: 12, fontSize: 15 },

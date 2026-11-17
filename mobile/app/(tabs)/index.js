@@ -17,7 +17,7 @@ export default function OperationalDashboardScreen() {
   const { colors, typography, radii } = useTheme();
   const [quickActionsVisible, setQuickActionsVisible] = useState(false);
 
-  const { data, isLoading, error, refetch, isRefetching } = useQuery({
+  const { data, dataUpdatedAt, isLoading, error, refetch, isRefetching } = useQuery({
     queryKey: ['dashboard'],
     queryFn: () => apiRequest('/ops/dashboard'),
   });
@@ -44,8 +44,7 @@ export default function OperationalDashboardScreen() {
       >
         <ModuleHeader
           code="HM"
-          title="Operations Dashboard"
-          subtitle="Live service health, active incidents, and recent deploys"
+          title="Operational dashboard"
           rightAction={
             <View style={styles.headerActions}>
               <Pressable
@@ -68,11 +67,17 @@ export default function OperationalDashboardScreen() {
 
         {error ? (
           <ErrorState
-            title="Partial or Unavailable Telemetry (HM-03)"
+            title="Partial or Unavailable Telemetry"
             message={error.message}
             onRetry={refetch}
           />
         ) : null}
+
+        {data ? <SignalBanner>
+          <Text style={[typography.badge, { color: colors.primary }]}>{activeIncidents.length ? 'ACTIVE INCIDENTS' : 'YOUR WORKSPACE'}</Text>
+          <Text style={[typography.title, { color: colors.textPrimary, marginTop: 8 }]}>{activeIncidents.length ? 'Production needs attention' : data.isFirstUse ? 'Set up your workspace' : 'Your operational overview'}</Text>
+          <Text style={[typography.caption, { color: colors.textSecondary, marginTop: 8 }]}>{activeIncidents.length ? `${activeIncidents.length} active ${activeIncidents.length === 1 ? 'incident' : 'incidents'} to review.` : 'Review incidents, service health, and recent deployments.'}</Text>
+        </SignalBanner> : null}
 
         {problems.length > 0 ? (
           <SignalCard style={{ borderColor: colors.warning, backgroundColor: colors.warningBg }}>
@@ -91,35 +96,31 @@ export default function OperationalDashboardScreen() {
         ) : null}
 
         {/* HM-01 Summary Banner */}
-        <SignalBanner>
-          <View style={styles.rowBetween}>
-            <View>
+        {data ? <SignalCard>
+          <Text style={[typography.bodyBold, { color: colors.textPrimary, marginBottom: 8 }]}>Current status</Text>
+          <View style={styles.summaryRow}>
+            <View style={styles.summaryItem}>
               <Text style={[typography.caption, { color: colors.textSecondary }]}>ACTIVE INCIDENTS</Text>
               <Text style={[typography.title, { color: colors.textPrimary, marginTop: 2 }]}>
                 {activeIncidents.length}
               </Text>
             </View>
-            <View>
+            <View style={styles.summaryItem}>
               <Text style={[typography.caption, { color: colors.textSecondary }]}>SERVICES</Text>
               <Text style={[typography.title, { color: colors.textPrimary, marginTop: 2 }]}>
                 {services.length}
               </Text>
             </View>
-            <View>
+            <View style={styles.summaryItem}>
               <Text style={[typography.caption, { color: colors.textSecondary }]}>FAILED DEPLOYS</Text>
               <Text style={[typography.title, { color: colors.critical, marginTop: 2 }]}>
                 {(data?.failedDeployments || []).length}
               </Text>
             </View>
           </View>
-          <PrimaryButton
-            label="Quick Actions (HM-06)"
-            onPress={() => setQuickActionsVisible(true)}
-            style={{ marginTop: 14 }}
-          />
-        </SignalBanner>
+        </SignalCard> : null}
 
-        {/* First-use state (HM-02) */}
+        {/* First-use state */}
         {data?.isFirstUse ? (
           <EmptyState
             icon="rocket-outline"
@@ -131,7 +132,7 @@ export default function OperationalDashboardScreen() {
         ) : null}
 
         {/* Active Incidents */}
-        <Text style={[typography.heading, { color: colors.textPrimary, marginBottom: 8 }]}>
+        {data ? <><Text style={[typography.heading, { color: colors.textPrimary, marginBottom: 8 }]}>
           Active Incidents
         </Text>
         {activeIncidents.length === 0 ? (
@@ -163,6 +164,7 @@ export default function OperationalDashboardScreen() {
         <Text style={[typography.heading, { color: colors.textPrimary, marginTop: 6, marginBottom: 8 }]}>
           Service Health
         </Text>
+        {services.length === 0 ? <SignalCard><Text style={[typography.bodyBold, { color: colors.textPrimary }]}>No services available</Text><Text style={[typography.caption, { color: colors.textSecondary, marginTop: 4 }]}>Connect or sync Render to view service health.</Text></SignalCard> : null}
         {services.slice(0, 4).map((svc) => (
           <SignalCard key={svc.id} onPress={() => router.push(`/services/${svc.id}`)}>
             <View style={styles.rowBetween}>
@@ -172,6 +174,7 @@ export default function OperationalDashboardScreen() {
             <Text style={[typography.caption, { color: colors.textSecondary, marginTop: 4 }]}>
               {svc.repoFullName || 'Unlinked repository'} · {svc.lastLatencyMs ? `${svc.lastLatencyMs}ms` : 'No probe yet'}
             </Text>
+            <Text style={[typography.caption, { color: colors.textSecondary, marginTop: 4 }]}>{svc.lastHealthCheckedAt ? `Last checked ${new Date(svc.lastHealthCheckedAt).toLocaleString()}` : 'No health check recorded'}</Text>
           </SignalCard>
         ))}
 
@@ -196,6 +199,9 @@ export default function OperationalDashboardScreen() {
             ))}
           </>
         ) : null}
+        <PrimaryButton label="Quick Actions" onPress={() => setQuickActionsVisible(true)} style={{ marginTop: 2, marginBottom: 12 }} />
+        {dataUpdatedAt ? <Text style={[typography.caption, { color: colors.textSecondary, marginBottom: 12 }]}>Last refreshed {new Date(dataUpdatedAt).toLocaleString()}</Text> : null}
+        </> : null}
       </ScrollView>
 
       {/* HM-06 Quick Actions Modal */}
@@ -222,6 +228,14 @@ export default function OperationalDashboardScreen() {
               onPress={() => {
                 setQuickActionsVisible(false);
                 router.push('/repositories');
+              }}
+              style={{ marginTop: 10 }}
+            />
+            <SecondaryButton
+              label="View Services"
+              onPress={() => {
+                setQuickActionsVisible(false);
+                router.push('/(tabs)/services');
               }}
               style={{ marginTop: 10 }}
             />
@@ -255,7 +269,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  rowBetween: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  summaryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  summaryItem: { flexGrow: 1, flexBasis: 95, minWidth: 95 },
   modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' },
   modalSheet: {
     padding: 20,

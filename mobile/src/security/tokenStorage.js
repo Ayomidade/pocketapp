@@ -4,6 +4,7 @@ import * as Crypto from 'expo-crypto';
 const ACCESS_TOKEN_KEY = 'pocketops_access_token';
 const REFRESH_TOKEN_KEY = 'pocketops_refresh_token';
 const DRAFT_SECRET_KEY = 'pocketops_draft_cipher_key';
+let draftKeyPromise = null;
 
 export async function saveTokens({ accessToken, refreshToken }) {
   if (accessToken) {
@@ -28,13 +29,16 @@ export async function clearTokens() {
 }
 
 export async function getOrCreateDraftKey() {
-  let key = await SecureStore.getItemAsync(DRAFT_SECRET_KEY);
-  if (!key) {
-    const bytes = await Crypto.getRandomBytesAsync(32);
-    key = Array.from(bytes)
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('');
-    await SecureStore.setItemAsync(DRAFT_SECRET_KEY, key);
+  if (!draftKeyPromise) {
+    draftKeyPromise = (async () => {
+      let key = await SecureStore.getItemAsync(DRAFT_SECRET_KEY);
+      if (!key) {
+        const bytes = await Crypto.getRandomBytesAsync(32);
+        key = Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+        await SecureStore.setItemAsync(DRAFT_SECRET_KEY, key);
+      }
+      return key;
+    })().catch((error) => { draftKeyPromise = null; throw error; });
   }
-  return key;
+  return draftKeyPromise;
 }

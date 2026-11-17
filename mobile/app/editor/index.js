@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Modal, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { useRouter } from 'expo-router';
-import { useMutation } from '@tanstack/react-query';
+import { useNavigation, useRouter } from 'expo-router';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { ScreenContainer } from '../../src/components/ScreenContainer';
 import { ModuleHeader } from '../../src/components/ModuleHeader';
-import { SignalBanner, SignalCard } from '../../src/components/SignalCard';
+import { SignalBanner, SignalCard, SignalIntro } from '../../src/components/SignalCard';
 import { PrimaryButton, SecondaryButton } from '../../src/components/Buttons';
 import { StatusBadge } from '../../src/components/StatusBadge';
 import { EmptyState, ErrorState } from '../../src/components/StateViews';
@@ -23,33 +23,58 @@ import { apiRequest } from '../../src/services/apiClient';
 
 export default function CodeEditorWorkspaceScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
   const { colors, typography, radii } = useTheme();
   const user = useAuthStore((s) => s.user);
   const activeFile = useAppStore((s) => s.activeEditorFile);
   const setActiveEditorFile = useAppStore((s) => s.setActiveEditorFile);
 
   const editorRef = useRef(null);
+  const allowNavigation = useRef(false);
   const [content, setContent] = useState(activeFile?.content || '');
+  const contentRef = useRef(activeFile?.content || '');
   const [cursor, setCursor] = useState({ line: 1, col: 1 });
   const [drafts, setDrafts] = useState([]);
   const [restoredDraft, setRestoredDraft] = useState(false);
+  const [draftNotice, setDraftNotice] = useState('');
 
   // Modals covering ED-03, ED-05, ED-06, ED-07, GT-03..GT-07
   const [mode, setMode] = useState('editor'); // 'editor' | 'diff' | 'drafts' | 'commit' | 'pr' | 'conflict'
   const [findOpen, setFindOpen] = useState(false);
+  const [switchOpen, setSwitchOpen] = useState(false);
+  const [switchPath, setSwitchPath] = useState('');
   const [findQuery, setFindQuery] = useState('');
+  const [searchResult, setSearchResult] = useState(null);
   const [gotoLineInput, setGotoLineInput] = useState('');
   const [commitMessage, setCommitMessage] = useState('');
   const [prTitle, setPrTitle] = useState('');
+  const [prBody, setPrBody] = useState('');
   const [prBase, setPrBase] = useState('main');
   const [conflictData, setConflictData] = useState(null);
   const [gitResult, setGitResult] = useState(null);
+  const [showChecks, setShowChecks] = useState(false);
+
+  const pullRequest = useQuery({
+    queryKey: ['pull-request', activeFile?.repoId, gitResult?.data?.number],
+    queryFn: () => apiRequest(`/repositories/${activeFile.repoId}/pulls/${gitResult.data.number}`),
+    enabled: showChecks && gitResult?.kind === 'pr' && Boolean(activeFile?.repoId && gitResult?.data?.number),
+  });
+  const switchContents = useQuery({
+    queryKey: ['editor-switcher', activeFile?.repoId, activeFile?.branch, switchPath],
+    queryFn: () => apiRequest(`/repositories/${activeFile.repoId}/contents?path=${encodeURIComponent(switchPath)}&ref=${encodeURIComponent(activeFile.branch)}`),
+    enabled: switchOpen && Boolean(activeFile?.repoId && activeFile?.branch),
+  });
 
   const userId = user?.id || 'local-user';
 
   useEffect(() => {
+    let cancelled = false;
+    const initialContent = activeFile?.content || '';
+    contentRef.current = initialContent;
+    if (activeFile) setContent(initialContent);
     (async () => {
       const list = await listEncryptedDrafts(userId).catch(() => []);
+      if (cancelled) return;
       setDrafts(list);
       if (activeFile) {
         const existing = await getEncryptedDraft(
@@ -58,7 +83,9 @@ export default function CodeEditorWorkspaceScreen() {
           activeFile.branch,
           activeFile.path
         ).catch(() => null);
+        if (cancelled || contentRef.current !== initialContent) return;
         if (existing && existing.content !== activeFile.originalContent) {
+          contentRef.current = existing.content;
           setContent(existing.content);
           setRestoredDraft(true);
         } else {
@@ -67,9 +94,29 @@ export default function CodeEditorWorkspaceScreen() {
         }
       }
     })();
+    return () => { cancelled = true; };
   }, [activeFile?.repoId, activeFile?.branch, activeFile?.path]);
 
   const isDirty = Boolean(activeFile && content !== activeFile.originalContent);
+
+  useEffect(() => navigation.addListener('beforeRemove', (event) => {
+    if (allowNavigation.current) { allowNavigation.current = false; return; }
+    if (!isDirty) return;
+    event.preventDefault();
+    Alert.alert('Unsaved changes', 'Save a draft before leaving?', [
+      { text: 'Keep editing', style: 'cancel' },
+      { text: 'Discard', style: 'destructive', onPress: () => { allowNavigation.current = true; navigation.dispatch(event.data.action); } },
+      { text: 'Save draft', onPress: async () => {
+        try {
+          await saveEncryptedDraft({ userId, repoId: activeFile.repoId, repoFullName: activeFile.repoFullName, branch: activeFile.branch, filePath: activeFile.path, baseSha: activeFile.baseSha, content });
+          allowNavigation.current = true;
+          navigation.dispatch(event.data.action);
+        } catch (error) {
+          Alert.alert('Could not save draft', error.message || 'Please try again.');
+        }
+      } },
+    ]);
+  }), [navigation, isDirty, activeFile, content, userId]);
 
   const diffLines = useMemo(
     () => computeLineDiff(activeFile?.originalContent || '', content),
@@ -79,19 +126,79 @@ export default function CodeEditorWorkspaceScreen() {
 
   const handleSaveDraft = async () => {
     if (!activeFile) return;
-    await saveEncryptedDraft({
-      userId,
-      repoId: activeFile.repoId,
-      repoFullName: activeFile.repoFullName,
-      branch: activeFile.branch,
-      filePath: activeFile.path,
-      baseSha: activeFile.baseSha,
-      content,
-    });
-    const list = await listEncryptedDrafts(userId);
-    setDrafts(list);
+    try {
+      await saveEncryptedDraft({
+        userId,
+        repoId: activeFile.repoId,
+        repoFullName: activeFile.repoFullName,
+        branch: activeFile.branch,
+        filePath: activeFile.path,
+        baseSha: activeFile.baseSha,
+        content,
+      });
+      const list = await listEncryptedDrafts(userId);
+      setDrafts(list);
+      setRestoredDraft(true);
+      Alert.alert('Encrypted Draft Saved', 'Stored locally in SQLite encrypted with SecureStore key.');
+    } catch (error) {
+      Alert.alert('Could not save draft', error.message || 'Please try again.');
+    }
+  };
+
+  const loadDraft = async (draft) => {
+    let originalContent = null;
+    let notice = 'The remote file is unavailable. Review the draft against the remote file when you reconnect.';
+    try {
+      const response = await apiRequest(`/repositories/${draft.repoId}/contents?path=${encodeURIComponent(draft.filePath)}&ref=${encodeURIComponent(draft.branch)}`);
+      if (response.kind === 'file' && typeof response.file.content === 'string') {
+        originalContent = response.file.content;
+        notice = response.file.sha === draft.baseSha ? '' : 'The remote file changed since this draft was saved. Review both versions before committing.';
+      }
+    } catch { /* Allow a draft to open while offline. */ }
+    setDraftNotice(notice);
+    setActiveEditorFile({ repoId: draft.repoId, repoFullName: draft.repoFullName, branch: draft.branch, path: draft.filePath, baseSha: draft.baseSha, content: draft.content, originalContent });
+    setContent(draft.content);
     setRestoredDraft(true);
-    Alert.alert('Encrypted Draft Saved', 'Stored locally in SQLite encrypted with SecureStore key.');
+    setMode('editor');
+  };
+
+  const openDraft = (draft) => {
+    if (!isDirty) { loadDraft(draft); return; }
+    Alert.alert('Unsaved changes', 'Save your current changes before opening another draft?', [
+      { text: 'Keep editing', style: 'cancel' },
+      { text: 'Discard changes', style: 'destructive', onPress: () => loadDraft(draft) },
+      { text: 'Save draft', onPress: async () => {
+        try {
+          await saveEncryptedDraft({ userId, repoId: activeFile.repoId, repoFullName: activeFile.repoFullName, branch: activeFile.branch, filePath: activeFile.path, baseSha: activeFile.baseSha, content });
+          await loadDraft(draft);
+        } catch (error) { Alert.alert('Could not save draft', error.message || 'Please try again.'); }
+      } },
+    ]);
+  };
+
+  const switchFile = (file) => {
+    const apply = () => {
+      if (file.editable === false || typeof file.content !== 'string') {
+        Alert.alert('Cannot edit file', 'This file is unavailable as text.');
+        return;
+      }
+      setActiveEditorFile({ ...activeFile, path: file.path, baseSha: file.sha, content: file.content, originalContent: file.content });
+      setContent(file.content);
+      setDraftNotice('');
+      setRestoredDraft(false);
+      setSwitchOpen(false);
+    };
+    if (!isDirty) { apply(); return; }
+    Alert.alert('Unsaved changes', 'Save your current changes before switching files?', [
+      { text: 'Keep editing', style: 'cancel' },
+      { text: 'Discard', style: 'destructive', onPress: apply },
+      { text: 'Save draft', onPress: async () => {
+        try {
+          await saveEncryptedDraft({ userId, repoId: activeFile.repoId, repoFullName: activeFile.repoFullName, branch: activeFile.branch, filePath: activeFile.path, baseSha: activeFile.baseSha, content });
+          apply();
+        } catch (error) { Alert.alert('Could not save draft', error.message || 'Please try again.'); }
+      } },
+    ]);
   };
 
   const commitMutation = useMutation({
@@ -115,10 +222,14 @@ export default function CodeEditorWorkspaceScreen() {
         content,
         originalContent: content,
       });
-      const existing = await getEncryptedDraft(userId, activeFile.repoId, activeFile.branch, activeFile.path);
-      if (existing) await deleteEncryptedDraft(existing.id);
       setMode('pr');
       setPrTitle(commitMessage.trim());
+      try {
+        const existing = await getEncryptedDraft(userId, activeFile.repoId, activeFile.branch, activeFile.path);
+        if (existing) await deleteEncryptedDraft(existing.id);
+      } catch {
+        Alert.alert('Commit pushed', 'Your commit succeeded, but the local draft could not be removed.');
+      }
     },
     onError: (err) => {
       if (err.code === 'REMOTE_REVISION_CONFLICT' || err.status === 409) {
@@ -135,7 +246,7 @@ export default function CodeEditorWorkspaceScreen() {
         idempotent: true,
         body: {
           title: prTitle.trim(),
-          body: `Created from PocketOps mobile editor (${activeFile.path})`,
+          body: prBody.trim(),
           head: activeFile.branch,
           base: prBase.trim() || 'main',
         },
@@ -151,7 +262,7 @@ export default function CodeEditorWorkspaceScreen() {
       <ScreenContainer>
         <ModuleHeader
           code="ED"
-          title="Encrypted Draft Manager (ED-05)"
+          title="Encrypted Draft Manager"
           subtitle="Offline changes protected by SecureStore-backed encryption"
           showBack
         />
@@ -165,21 +276,7 @@ export default function CodeEditorWorkspaceScreen() {
           />
         ) : (
           drafts.map((d) => (
-            <SignalCard
-              key={d.id}
-              onPress={() => {
-                setActiveEditorFile({
-                  repoId: d.repoId,
-                  repoFullName: d.repoFullName,
-                  branch: d.branch,
-                  path: d.filePath,
-                  baseSha: d.baseSha,
-                  content: d.content,
-                  originalContent: d.content,
-                });
-                setMode('editor');
-              }}
-            >
+            <SignalCard key={d.id}>
               <View style={styles.rowBetween}>
                 <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>{d.filePath}</Text>
                 <StatusBadge status="local_draft" label="Local Draft" />
@@ -187,6 +284,9 @@ export default function CodeEditorWorkspaceScreen() {
               <Text style={[typography.caption, { color: colors.textSecondary, marginTop: 4 }]}>
                 {d.repoFullName} · Branch: {d.branch} · Base SHA: {d.baseSha.slice(0, 7)}
               </Text>
+              <Text style={[typography.caption, { color: colors.textSecondary, marginTop: 4 }]}>Saved {new Date(d.updatedAt).toLocaleString()}</Text>
+              <SecondaryButton label="Open draft" onPress={() => openDraft(d)} style={{ marginTop: 12 }} />
+              <SecondaryButton label="Delete draft" onPress={() => Alert.alert('Delete draft?', 'This removes the local copy of your changes.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: async () => { await deleteEncryptedDraft(d.id); setDrafts(await listEncryptedDrafts(userId)); } }])} style={{ marginTop: 8 }} />
             </SignalCard>
           ))
         )}
@@ -198,7 +298,7 @@ export default function CodeEditorWorkspaceScreen() {
     <ScreenContainer>
       <ModuleHeader
         code="ED"
-        title={activeFile.path.split('/').pop()}
+        title={{ editor: 'CodeMirror editor', diff: 'Diff review', conflict: 'Revision conflict', commit: 'Commit review', pr: 'Pull request' }[mode] || activeFile.path.split('/').pop()}
         subtitle={`${activeFile.repoFullName} · ${activeFile.branch} · Ln ${cursor.line}, Col ${cursor.col}`}
         showBack
         rightAction={
@@ -209,8 +309,20 @@ export default function CodeEditorWorkspaceScreen() {
         }
       />
 
+      {mode === 'editor' ? <SignalBanner>
+        <Text style={[typography.badge, { color: colors.primary }]}>{isDirty ? 'LOCAL CHANGES' : 'EDITOR'}</Text>
+        <Text style={[typography.heading, { color: colors.textPrimary, marginTop: 8 }]}>{activeFile.path.split('/').pop()} · Edit</Text>
+        <Text style={[typography.caption, { color: colors.textSecondary, marginTop: 6 }]}>{activeFile.repoFullName} · {activeFile.branch} · {isDirty ? 'Uncommitted changes' : 'No local changes'}</Text>
+      </SignalBanner> : null}
+      {mode === 'diff' ? <SignalIntro eyebrow="Review" title="Review changes" description={`${activeFile.path} · ${activeFile.branch} · +${diffStats.additions} / -${diffStats.deletions}`} /> : null}
+      {mode === 'conflict' ? <SignalIntro eyebrow="Verification" title="Remote revision changed" description="Review the latest file and your local changes before choosing what to do." /> : null}
+      {mode === 'commit' ? <SignalIntro eyebrow="Review" title="Commit review" description="Confirm the file, branch, changes, and expected revision before committing." /> : null}
+      {mode === 'pr' ? <SignalIntro eyebrow="Git" title="Pull request" description="Review the pushed commit and choose the target branch." /> : null}
+
       {/* Mode Switcher */}
+      {draftNotice ? <SignalBanner><Text style={[typography.body, { color: colors.textSecondary }]}>{draftNotice}</Text></SignalBanner> : null}
       <View style={styles.toolbarRow}>
+        <SecondaryButton label="Files" onPress={() => { setSwitchPath(''); setSwitchOpen(true); }} style={styles.miniBtn} />
         <SecondaryButton label="Find / Line" onPress={() => setFindOpen(true)} style={styles.miniBtn} />
         <SecondaryButton label="Save Draft" onPress={handleSaveDraft} style={styles.miniBtn} />
         <SecondaryButton
@@ -232,13 +344,14 @@ export default function CodeEditorWorkspaceScreen() {
             <CodeMirrorEditor
               filePath={activeFile.path}
               content={content}
-              onChangeContent={setContent}
+              onChangeContent={(next) => { contentRef.current = next; setContent(next); }}
               onCursorChange={setCursor}
+              onSearchResult={setSearchResult}
               editorRef={editorRef}
             />
           </View>
           <PrimaryButton
-            label="Review & Commit Changes (GT-03)"
+            label="Review & Commit Changes"
             disabled={!isDirty}
             onPress={() => setMode('commit')}
             style={{ marginTop: 12 }}
@@ -282,7 +395,7 @@ export default function CodeEditorWorkspaceScreen() {
             ))}
           </ScrollView>
           <PrimaryButton
-            label="Proceed to Commit (GT-03)"
+            label="Proceed to Commit"
             disabled={!isDirty}
             onPress={() => setMode('commit')}
             style={{ marginTop: 12 }}
@@ -293,34 +406,38 @@ export default function CodeEditorWorkspaceScreen() {
       {/* ED-07 Remote Revision Conflict Reconciliation */}
       {mode === 'conflict' ? (
         <SignalCard style={{ borderColor: colors.critical }}>
-          <StatusBadge status="critical" label="Remote SHA Conflict (ED-07)" />
+          <StatusBadge status="critical" label="Remote SHA Conflict" />
           <Text style={[typography.heading, { color: colors.textPrimary, marginTop: 8 }]}>
             Remote File Changed Since You Opened It
           </Text>
           <Text style={[typography.body, { color: colors.textSecondary, marginTop: 4 }]}>
             Expected SHA {conflictData?.expectedSha?.slice(0, 8)} vs Remote SHA {conflictData?.remoteSha?.slice(0, 8)}. Silent overwrite was blocked.
           </Text>
+          <Text style={[typography.caption, { color: colors.textSecondary, marginTop: 8 }]}>Review the latest remote content before deciding how to proceed.</Text>
+          {typeof conflictData?.remoteContent === 'string' ? <ScrollView style={{ maxHeight: 160, marginTop: 8 }}><Text style={[typography.mono, { color: colors.textPrimary }]}>{conflictData.remoteContent}</Text></ScrollView> : null}
           <PrimaryButton
             label="Accept Remote & Discard Local"
+            disabled={!conflictData?.remoteSha || typeof conflictData?.remoteContent !== 'string'}
             onPress={() => {
-              setContent(conflictData?.remoteContent || '');
+              setContent(conflictData.remoteContent);
               setActiveEditorFile({
                 ...activeFile,
-                baseSha: conflictData?.remoteSha || activeFile.baseSha,
-                content: conflictData?.remoteContent || '',
-                originalContent: conflictData?.remoteContent || '',
+                baseSha: conflictData.remoteSha,
+                content: conflictData.remoteContent,
+                originalContent: conflictData.remoteContent,
               });
               setMode('editor');
             }}
             style={{ marginTop: 12 }}
           />
           <SecondaryButton
-            label="Rebase Local Draft onto Remote SHA"
+            label="Review my draft against the latest file"
+            disabled={!conflictData?.remoteSha || typeof conflictData?.remoteContent !== 'string'}
             onPress={() => {
               setActiveEditorFile({
                 ...activeFile,
-                baseSha: conflictData?.remoteSha || activeFile.baseSha,
-                originalContent: conflictData?.remoteContent || activeFile.originalContent,
+                baseSha: conflictData.remoteSha,
+                originalContent: conflictData.remoteContent,
               });
               setMode('diff');
             }}
@@ -332,10 +449,14 @@ export default function CodeEditorWorkspaceScreen() {
       {/* GT-03 / GT-04 Commit Review & Confirmation */}
       {mode === 'commit' ? (
         <SignalCard>
-          <Text style={[typography.heading, { color: colors.textPrimary }]}>Commit Review (GT-03)</Text>
+          <Text style={[typography.heading, { color: colors.textPrimary }]}>Commit Review</Text>
           <Text style={[typography.caption, { color: colors.textSecondary, marginTop: 4 }]}>
             Target: {activeFile.branch} · +{diffStats.additions} / -{diffStats.deletions} lines · Base SHA {activeFile.baseSha.slice(0, 7)}
           </Text>
+          <Text style={[typography.caption, { color: colors.textSecondary, marginTop: 8 }]}>{activeFile.path} · {activeFile.repoFullName}</Text>
+          <ScrollView style={{ maxHeight: 180, marginTop: 8 }}>
+            {diffLines.map((line, idx) => <Text key={idx} style={[typography.mono, { color: line.type === 'added' ? colors.verified : line.type === 'removed' ? colors.critical : colors.textSecondary }]}>{line.type === 'added' ? '+ ' : line.type === 'removed' ? '- ' : '  '}{line.text}</Text>)}
+          </ScrollView>
           <TextInput
             value={commitMessage}
             onChangeText={setCommitMessage}
@@ -347,10 +468,10 @@ export default function CodeEditorWorkspaceScreen() {
             ]}
           />
           <PrimaryButton
-            label="Confirm & Push Commit (GT-04)"
+            label="Confirm & Push Commit"
             loading={commitMutation.isPending}
             disabled={commitMessage.trim().length < 3}
-            onPress={() => commitMutation.mutate()}
+            onPress={() => Alert.alert('Confirm commit', `Commit ${activeFile.path} to ${activeFile.branch}?`, [{ text: 'Cancel', style: 'cancel' }, { text: 'Commit', onPress: () => commitMutation.mutate() }])}
             style={{ marginTop: 12 }}
           />
           <SecondaryButton label="Back to Diff" onPress={() => setMode('diff')} style={{ marginTop: 8 }} />
@@ -362,7 +483,7 @@ export default function CodeEditorWorkspaceScreen() {
         <SignalCard>
           <StatusBadge status="verified" label="Commit Pushed (Not Deployed Yet)" />
           <Text style={[typography.heading, { color: colors.textPrimary, marginTop: 8 }]}>
-            Open Pull Request (GT-05)
+            Open Pull Request
           </Text>
           <Text style={[typography.caption, { color: colors.textSecondary, marginTop: 4 }]}>
             Head: {activeFile.branch} · Commit: {gitResult?.data?.commitSha?.slice(0, 7) || 'pushed'}
@@ -375,6 +496,15 @@ export default function CodeEditorWorkspaceScreen() {
               <Text style={[typography.caption, { color: colors.textSecondary, marginTop: 4 }]}>
                 {gitResult.data.head} → {gitResult.data.base} · {gitResult.data.state}
               </Text>
+              <SecondaryButton label={showChecks ? 'Hide pull request details' : 'View pull request and checks'} onPress={() => setShowChecks(!showChecks)} style={{ marginTop: 12 }} />
+              {showChecks && pullRequest.isLoading ? <Text style={[typography.caption, { color: colors.textSecondary, marginTop: 8 }]}>Loading checks...</Text> : null}
+              {showChecks && pullRequest.error ? <ErrorState message={pullRequest.error.message} onRetry={pullRequest.refetch} /> : null}
+              {showChecks && pullRequest.data?.pullRequest ? <View style={{ marginTop: 12 }}>
+                <Text style={[typography.bodyBold, { color: colors.textPrimary }]}>{pullRequest.data.pullRequest.title}</Text>
+                <Text style={[typography.caption, { color: colors.textSecondary, marginTop: 4 }]}>{pullRequest.data.pullRequest.head} → {pullRequest.data.pullRequest.base} · {pullRequest.data.pullRequest.merged ? 'Merged' : pullRequest.data.pullRequest.state}</Text>
+                {pullRequest.data.pullRequest.checksUnavailable ? <Text style={[typography.caption, { color: colors.warning, marginTop: 8 }]}>Checks unavailable. Verify GitHub App permissions and retry.</Text> : (pullRequest.data.pullRequest.checks || []).length === 0 ? <Text style={[typography.caption, { color: colors.textSecondary, marginTop: 8 }]}>No checks reported for this revision.</Text> : pullRequest.data.pullRequest.checks.map((check) => <Text key={check.id} style={[typography.body, { color: colors.textPrimary, marginTop: 8 }]}>{check.name}: {check.conclusion || check.status || 'unknown'}</Text>)}
+                <SecondaryButton label="Refresh checks" onPress={() => pullRequest.refetch()} style={{ marginTop: 12 }} />
+              </View> : null}
             </SignalBanner>
           ) : (
             <>
@@ -398,11 +528,21 @@ export default function CodeEditorWorkspaceScreen() {
                   { color: colors.textPrimary, borderColor: colors.border, backgroundColor: colors.surfaceSubtle, borderRadius: radii.button },
                 ]}
               />
+              <TextInput
+                value={prBody}
+                onChangeText={setPrBody}
+                placeholder="Describe the changes (optional)"
+                placeholderTextColor={colors.textSecondary}
+                multiline
+                style={[styles.input, { minHeight: 80, textAlignVertical: 'top', color: colors.textPrimary, borderColor: colors.border, backgroundColor: colors.surfaceSubtle, borderRadius: radii.button }]}
+              />
+              {prMutation.error ? <ErrorState title="Could not create pull request" message={prMutation.error.message} /> : null}
+              {prBase.trim() === activeFile.branch ? <Text style={[typography.caption, { color: colors.warning, marginTop: 8 }]}>Choose a different base branch.</Text> : null}
               <PrimaryButton
                 label="Create Pull Request"
                 loading={prMutation.isPending}
-                disabled={prTitle.trim().length < 3}
-                onPress={() => prMutation.mutate()}
+                disabled={prTitle.trim().length < 3 || !prBase.trim() || prBase.trim() === activeFile.branch}
+                onPress={() => Alert.alert('Create pull request?', `${activeFile.branch} → ${prBase.trim()}`, [{ text: 'Cancel', style: 'cancel' }, { text: 'Create', onPress: () => prMutation.mutate() }])}
                 style={{ marginTop: 12 }}
               />
             </>
@@ -412,13 +552,29 @@ export default function CodeEditorWorkspaceScreen() {
       ) : null}
 
       {/* ED-03 Find & Go To Line Modal */}
+      <Modal visible={switchOpen} transparent animationType="slide" onRequestClose={() => setSwitchOpen(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalSheet, { backgroundColor: colors.surface, borderColor: colors.border, maxHeight: '85%' }]}>
+            <Text style={[typography.heading, { color: colors.textPrimary }]}>Switch file</Text>
+            <Text style={[typography.caption, { color: colors.textSecondary, marginTop: 6 }]}>{activeFile.repoFullName} · {activeFile.branch} · /{switchPath}</Text>
+            {switchPath ? <SecondaryButton label="Parent folder" onPress={() => setSwitchPath(switchPath.split('/').slice(0, -1).join('/'))} style={{ marginTop: 8 }} /> : null}
+            {switchContents.isLoading ? <Text style={[typography.body, { color: colors.textSecondary, marginTop: 12 }]}>Loading files...</Text> : null}
+            {switchContents.error ? <ErrorState message={switchContents.error.message} onRetry={switchContents.refetch} /> : null}
+            <ScrollView style={{ maxHeight: 350, marginTop: 10 }}>
+              {switchContents.data?.kind === 'dir' ? switchContents.data.entries.map((entry) => <SignalCard key={entry.path} onPress={() => setSwitchPath(entry.path)}><Text style={[typography.bodyBold, { color: colors.textPrimary }]}>{entry.type === 'dir' ? 'Folder · ' : 'File · '}{entry.name}</Text></SignalCard>) : null}
+              {switchContents.data?.kind === 'file' ? <SignalCard><Text style={[typography.bodyBold, { color: colors.textPrimary }]}>{switchContents.data.file.name}</Text><PrimaryButton label="Open file" onPress={() => switchFile(switchContents.data.file)} style={{ marginTop: 10 }} /></SignalCard> : null}
+            </ScrollView>
+            <SecondaryButton label="Close" onPress={() => setSwitchOpen(false)} style={{ marginTop: 8 }} />
+          </View>
+        </View>
+      </Modal>
       <Modal visible={findOpen} transparent animationType="fade" onRequestClose={() => setFindOpen(false)}>
         <View style={styles.modalBackdrop}>
           <View style={[styles.modalSheet, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Text style={[typography.heading, { color: colors.textPrimary }]}>Find & Go to Line (ED-03)</Text>
+            <Text style={[typography.heading, { color: colors.textPrimary }]}>Find & Go to Line</Text>
             <TextInput
               value={findQuery}
-              onChangeText={setFindQuery}
+              onChangeText={(value) => { setFindQuery(value); setSearchResult(null); }}
               placeholder="Search text in file..."
               placeholderTextColor={colors.textSecondary}
               style={[
@@ -428,12 +584,13 @@ export default function CodeEditorWorkspaceScreen() {
             />
             <PrimaryButton
               label="Find Next"
+              disabled={!findQuery}
               onPress={() => {
                 editorRef.current?.find(findQuery);
-                setFindOpen(false);
               }}
               style={{ marginTop: 10 }}
             />
+            {searchResult ? <Text accessibilityLiveRegion="polite" style={[typography.caption, { color: colors.textSecondary, marginTop: 8 }]}>{searchResult.total ? `Match ${searchResult.current} of ${searchResult.total}` : 'No matches found'}</Text> : null}
             <TextInput
               value={gotoLineInput}
               onChangeText={setGotoLineInput}
@@ -453,6 +610,7 @@ export default function CodeEditorWorkspaceScreen() {
               }}
               style={{ marginTop: 10 }}
             />
+            <SecondaryButton label="Close" onPress={() => setFindOpen(false)} style={{ marginTop: 10 }} />
           </View>
         </View>
       </Modal>
@@ -461,7 +619,7 @@ export default function CodeEditorWorkspaceScreen() {
 }
 
 const styles = StyleSheet.create({
-  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  rowBetween: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   toolbarRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   miniBtn: { minHeight: 42, paddingHorizontal: 12 },
   editorContainer: { height: 420 },

@@ -47,7 +47,7 @@ export function StatusBadge({ status = 'unknown', label }) {
       ]}
     >
       <View style={[styles.dot, { backgroundColor: fg }]} />
-      <Text style={[typography.badge, { color: fg, textTransform: 'uppercase' }]}>
+      <Text style={[typography.badge, { color: fg, textTransform: 'uppercase', flexShrink: 1 }]}>
         {label || String(status).replace(/_/g, ' ')}
       </Text>
     </View>
@@ -59,6 +59,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
+    maxWidth: '100%',
     paddingHorizontal: 9,
     paddingVertical: 4,
     borderWidth: 1,

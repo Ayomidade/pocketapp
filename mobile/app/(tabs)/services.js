@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ScreenContainer } from '../../src/components/ScreenContainer';
 import { ModuleHeader } from '../../src/components/ModuleHeader';
-import { SignalCard } from '../../src/components/SignalCard';
+import { SignalBanner, SignalCard } from '../../src/components/SignalCard';
 import { PrimaryButton } from '../../src/components/Buttons';
 import { StatusBadge } from '../../src/components/StatusBadge';
 import { EmptyState, ErrorState, LoadingState } from '../../src/components/StateViews';
@@ -37,9 +37,10 @@ export default function ServicesTabScreen() {
       >
         <ModuleHeader
           code="SV"
-          title="Render Services"
-          subtitle="Production health status, deployments, and runtime logs"
+          title="Service list"
         />
+
+        <SignalBanner><Text style={[typography.badge, { color: colors.primary }]}>RENDER</Text><Text style={[typography.title, { color: colors.textPrimary, marginTop: 8 }]}>Service list</Text><Text style={[typography.caption, { color: colors.textSecondary, marginTop: 8 }]}>Review service status, deployment history, and health evidence.</Text></SignalBanner>
 
         {isLoading ? <LoadingState /> : null}
         {error ? <ErrorState message={error.message} onRetry={refetch} /> : null}
@@ -67,7 +68,7 @@ export default function ServicesTabScreen() {
                   {svc.serviceType} · {svc.repoFullName || 'Manual deploy'} · Branch: {svc.branch || 'main'}
                 </Text>
                 <Text style={[typography.caption, { color: colors.textSecondary, marginTop: 4 }]}>
-                  Latency: {svc.lastLatencyMs ? `${svc.lastLatencyMs}ms` : 'Unchecked'}
+                  {svc.lastHealthCheckedAt ? `Last checked ${new Date(svc.lastHealthCheckedAt).toLocaleString()}` : 'No health check recorded'} · Latency: {svc.lastLatencyMs == null ? 'Unavailable' : `${svc.lastLatencyMs}ms`}
                 </Text>
               </SignalCard>
             ))}
@@ -85,5 +86,5 @@ export default function ServicesTabScreen() {
 
 const styles = StyleSheet.create({
   scrollPad: { paddingHorizontal: 18, paddingBottom: 32, maxWidth: 640, width: '100%', alignSelf: 'center' },
-  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  rowBetween: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
 });

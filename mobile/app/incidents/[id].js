@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Modal, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ScreenContainer } from '../../src/components/ScreenContainer';
@@ -20,11 +20,15 @@ export default function IncidentDetailScreen() {
   const [noteInput, setNoteInput] = useState('');
   const [resolveOpen, setResolveOpen] = useState(false);
   const [resolutionSummary, setResolutionSummary] = useState('');
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [section, setSection] = useState('overview');
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['incident', id],
     queryFn: () => apiRequest(`/incidents/${id}`),
   });
+  const repos = useQuery({ queryKey: ['repositories'], queryFn: () => apiRequest('/repositories'), enabled: linkOpen });
+  const services = useQuery({ queryKey: ['services'], queryFn: () => apiRequest('/services'), enabled: linkOpen });
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['incident', id] });
@@ -52,6 +56,10 @@ export default function IncidentDetailScreen() {
   const verifyMutation = useMutation({
     mutationFn: () => apiRequest(`/incidents/${id}/verify-recovery`, { method: 'POST' }),
     onSuccess: invalidate,
+  });
+  const linkMutation = useMutation({
+    mutationFn: (resource) => apiRequest(`/incidents/${id}/resources`, { method: 'POST', body: resource }),
+    onSuccess: () => { setLinkOpen(false); invalidate(); },
   });
 
   const resolveMutation = useMutation({
@@ -87,6 +95,7 @@ export default function IncidentDetailScreen() {
 
   const inc = data.incident;
   const isResolved = inc.status === 'resolved';
+  const recoveryEvent = [...(inc.events || [])].reverse().find((event) => event.eventType === 'recovery_verified');
 
   const openLinkedResource = (res) => {
     if (res.resourceType === 'service') router.push(`/services/${res.resourceRef}`);
@@ -103,6 +112,8 @@ export default function IncidentDetailScreen() {
       />
 
       <SignalBanner>
+        <Text style={[typography.badge, { color: colors.primary, marginBottom: 6 }]}>INCIDENT</Text>
+        <Text style={[typography.heading, { color: colors.textPrimary, marginBottom: 8 }]}>Incident overview</Text>
         <View style={styles.rowBetween}>
           <StatusBadge status={inc.severity} label={inc.severity} />
           <StatusBadge status={inc.status} />
@@ -135,9 +146,14 @@ export default function IncidentDetailScreen() {
         )}
       </SignalBanner>
 
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sectionBar} contentContainerStyle={styles.sectionContent}>
+        {['overview', 'resources', 'investigation', 'recovery', 'timeline'].map((item) => <Pressable key={item} accessibilityRole="tab" accessibilityState={{ selected: section === item }} onPress={() => setSection(item)} style={[styles.sectionTab, { borderColor: section === item ? colors.primary : colors.border, backgroundColor: section === item ? colors.bannerMuted : colors.surface, borderRadius: radii.pill }]}><Text style={[typography.caption, { color: section === item ? colors.primary : colors.textSecondary, textTransform: 'capitalize' }]}>{item}</Text></Pressable>)}
+      </ScrollView>
+
       {/* IN-07 Linked Resources */}
+      {section === 'overview' || section === 'resources' ? <>
       <Text style={[typography.heading, { color: colors.textPrimary, marginBottom: 8 }]}>
-        Linked Resources (IN-07)
+        Linked Resources
       </Text>
       {(inc.resources || []).length === 0 ? (
         <SignalCard>
@@ -155,11 +171,14 @@ export default function IncidentDetailScreen() {
           </SignalCard>
         ))
       )}
+      {!isResolved ? <SecondaryButton label="Link a service or repository" onPress={() => setLinkOpen(true)} style={{ marginBottom: 16 }} /> : null}
+      </> : null}
 
       {/* IN-04 / IN-06 Notes & Mitigations */}
+      {section === 'overview' || section === 'investigation' ?
       <SignalCard>
         <Text style={[typography.heading, { color: colors.textPrimary }]}>
-          Investigation & Mitigation (IN-04 · IN-06)
+          Investigation & mitigation
         </Text>
         <TextInput
           value={noteInput}
@@ -186,24 +205,26 @@ export default function IncidentDetailScreen() {
             style={{ flex: 1 }}
           />
         </View>
-      </SignalCard>
+      </SignalCard> : null}
 
       {/* IN-08 Recovery Verification & IN-09 Explicit Resolve */}
-      {!isResolved ? (
+      {!isResolved && (section === 'overview' || section === 'recovery') ? (
         <SignalCard>
           <Text style={[typography.heading, { color: colors.textPrimary }]}>
-            Recovery & Resolution (IN-08 · IN-09)
+            Recovery & resolution
           </Text>
           <Text style={[typography.body, { color: colors.textSecondary, marginTop: 4 }]}>
             PocketOps never auto-resolves incidents on a single probe. Verify recovery explicitly, then resolve.
           </Text>
+          {recoveryEvent ? <Text style={[typography.caption, { color: colors.textSecondary, marginTop: 8 }]}>Latest evidence: {recoveryEvent.message} · {new Date(recoveryEvent.createdAt).toLocaleString()}</Text> : <Text style={[typography.caption, { color: colors.textSecondary, marginTop: 8 }]}>No recovery verification recorded yet.</Text>}
+          {verifyMutation.error ? <ErrorState message={verifyMutation.error.message} /> : null}
           <SecondaryButton
-            label="Verify Service Recovery Probe (IN-08)"
+            label="Verify Service Recovery Probe"
             onPress={() => verifyMutation.mutate()}
             style={{ marginTop: 12 }}
           />
           <PrimaryButton
-            label="Resolve Incident (IN-09)"
+            label="Resolve Incident"
             onPress={() => setResolveOpen(true)}
             style={{ marginTop: 10 }}
           />
@@ -211,8 +232,9 @@ export default function IncidentDetailScreen() {
       ) : null}
 
       {/* IN-05 Timeline */}
+      {section === 'overview' || section === 'timeline' ? <>
       <Text style={[typography.heading, { color: colors.textPrimary, marginTop: 6, marginBottom: 8 }]}>
-        Auditable Timeline (IN-05)
+        Auditable Timeline
       </Text>
       {(inc.events || []).map((ev) => (
         <SignalCard key={ev.id}>
@@ -227,12 +249,15 @@ export default function IncidentDetailScreen() {
           </Text>
         </SignalCard>
       ))}
+      {(inc.events || []).length === 0 ? <SignalCard><Text style={[typography.body, { color: colors.textSecondary }]}>No timeline events yet.</Text></SignalCard> : null}
+      </> : null}
 
       {/* IN-09 Resolve Confirmation Modal */}
       <Modal visible={resolveOpen} transparent animationType="slide" onRequestClose={() => setResolveOpen(false)}>
         <View style={styles.modalBackdrop}>
           <View style={[styles.modalSheet, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Text style={[typography.title, { color: colors.textPrimary }]}>Resolve Incident</Text>
+            <Text style={[typography.body, { color: colors.textSecondary, marginTop: 8 }]}>{recoveryEvent ? `Latest evidence: ${recoveryEvent.message}` : 'No recovery check has been recorded. Confirm the evidence before resolving.'}</Text>
             <TextInput
               value={resolutionSummary}
               onChangeText={setResolutionSummary}
@@ -258,12 +283,30 @@ export default function IncidentDetailScreen() {
           </View>
         </View>
       </Modal>
+
+      <Modal visible={linkOpen} transparent animationType="slide" onRequestClose={() => setLinkOpen(false)}>
+        <View style={styles.modalBackdrop}>
+          <ScrollView style={[styles.modalSheet, { backgroundColor: colors.surface, borderColor: colors.border, maxHeight: '85%' }]}>
+            <Text style={[typography.title, { color: colors.textPrimary }]}>Link a resource</Text>
+            {repos.isLoading || services.isLoading ? <LoadingState message="Loading resources..." /> : null}
+            {repos.error || services.error ? <ErrorState message={(repos.error || services.error).message} onRetry={() => { repos.refetch(); services.refetch(); }} /> : null}
+            {linkMutation.error ? <ErrorState message={linkMutation.error.message} /> : null}
+            {(services.data?.services || []).map((service) => <SignalCard key={`service-${service.id}`} onPress={() => linkMutation.mutate({ resourceType: 'service', resourceRef: service.id, label: service.name })}><Text style={[typography.bodyBold, { color: colors.textPrimary }]}>{service.name}</Text><Text style={[typography.caption, { color: colors.textSecondary }]}>Service</Text></SignalCard>)}
+            {(repos.data?.repositories || []).map((repo) => <SignalCard key={`repo-${repo.id}`} onPress={() => linkMutation.mutate({ resourceType: 'repository', resourceRef: repo.id, label: repo.fullName })}><Text style={[typography.bodyBold, { color: colors.textPrimary }]}>{repo.fullName}</Text><Text style={[typography.caption, { color: colors.textSecondary }]}>Repository</Text></SignalCard>)}
+            {!repos.isLoading && !services.isLoading && !repos.error && !services.error && !repos.data?.repositories?.length && !services.data?.services?.length ? <Text style={[typography.body, { color: colors.textSecondary, marginVertical: 16 }]}>No services or repositories are available.</Text> : null}
+            <SecondaryButton label="Close" onPress={() => setLinkOpen(false)} style={{ marginVertical: 12 }} />
+          </ScrollView>
+        </View>
+      </Modal>
     </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
-  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  rowBetween: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  sectionBar: { flexGrow: 0, marginBottom: 16 },
+  sectionContent: { gap: 8 },
+  sectionTab: { minHeight: 44, paddingHorizontal: 14, justifyContent: 'center', borderWidth: 1 },
   stateRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
   stateBtn: { minHeight: 42, paddingHorizontal: 12 },
   input: { borderWidth: 1, minHeight: 56, paddingHorizontal: 14, paddingTop: 10, marginTop: 10, fontSize: 15 },

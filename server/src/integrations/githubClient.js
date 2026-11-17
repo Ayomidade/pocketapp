@@ -1,5 +1,6 @@
 const { Octokit } = require('octokit');
 const { createAppAuth } = require('@octokit/auth-app');
+const { isUtf8 } = require('node:buffer');
 const env = require('../config/env');
 const { ConflictError, UpstreamError, BadRequestError } = require('../utils/errors');
 
@@ -174,6 +175,9 @@ async function getDirectoryContents(installationId, owner, repo, { path = '', re
     ref,
   });
   if (!Array.isArray(data)) {
+    const decoded = data.type === 'file' && data.encoding === 'base64' && typeof data.content === 'string'
+      ? Buffer.from(data.content, 'base64') : null;
+    const editable = Boolean(decoded && isUtf8(decoded) && !decoded.includes(0));
     return {
       kind: 'file',
       file: {
@@ -182,7 +186,8 @@ async function getDirectoryContents(installationId, owner, repo, { path = '', re
         sha: data.sha,
         size: data.size,
         encoding: data.encoding,
-        content: data.encoding === 'base64' ? Buffer.from(data.content, 'base64').toString('utf8') : data.content,
+        editable,
+        content: editable ? decoded.toString('utf8') : null,
       },
     };
   }
@@ -265,14 +270,22 @@ async function createPullRequest(installationId, owner, repo, { title, body, hea
   };
 }
 
+async function listPullRequests(installationId, owner, repo) {
+  const octokit = getAppOctokit(installationId);
+  const { data } = await octokit.rest.pulls.list({ owner, repo, state: 'all', sort: 'updated', direction: 'desc', per_page: 50 });
+  return data.map((pr) => ({ number: pr.number, title: pr.title, state: pr.state, head: pr.head.ref, base: pr.base.ref, updatedAt: pr.updated_at }));
+}
+
 async function getPullRequestAndChecks(installationId, owner, repo, pullNumber) {
   const octokit = getAppOctokit(installationId);
-  const [{ data: pr }, { data: checks }] = await Promise.all([
-    octokit.rest.pulls.get({ owner, repo, pull_number: Number(pullNumber) }),
-    octokit.rest.pulls
-      .get({ owner, repo, pull_number: Number(pullNumber) })
-      .then(({ data }) => octokit.rest.checks.listForRef({ owner, repo, ref: data.head.sha })),
-  ]);
+  const { data: pr } = await octokit.rest.pulls.get({ owner, repo, pull_number: Number(pullNumber) });
+  let checks;
+  let checksUnavailable = false;
+  try {
+    ({ data: checks } = await octokit.rest.checks.listForRef({ owner, repo, ref: pr.head.sha }));
+  } catch {
+    checksUnavailable = true;
+  }
 
   return {
     number: pr.number,
@@ -284,7 +297,8 @@ async function getPullRequestAndChecks(installationId, owner, repo, pullNumber) 
     base: pr.base.ref,
     headSha: pr.head.sha,
     htmlUrl: pr.html_url,
-    checks: (checks.check_runs || []).map((c) => ({
+    checksUnavailable,
+    checks: (checks?.check_runs || []).map((c) => ({
       id: c.id,
       name: c.name,
       status: c.status,
@@ -308,5 +322,6 @@ module.exports = {
   getDirectoryContents,
   commitFileWithShaCheck,
   createPullRequest,
+  listPullRequests,
   getPullRequestAndChecks,
 };

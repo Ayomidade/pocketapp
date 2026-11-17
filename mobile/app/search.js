@@ -4,9 +4,9 @@ import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { ScreenContainer } from '../src/components/ScreenContainer';
 import { ModuleHeader } from '../src/components/ModuleHeader';
-import { SignalCard } from '../src/components/SignalCard';
+import { SignalCard, SignalIntro } from '../src/components/SignalCard';
 import { StatusBadge } from '../src/components/StatusBadge';
-import { EmptyState, LoadingState } from '../src/components/StateViews';
+import { EmptyState, ErrorState, LoadingState } from '../src/components/StateViews';
 import { useTheme } from '../src/theme/ThemeProvider';
 import { apiRequest } from '../src/services/apiClient';
 
@@ -15,7 +15,7 @@ export default function GlobalSearchScreen() {
   const { colors, typography, radii } = useTheme();
   const [query, setQuery] = useState('');
 
-  const { data, isFetching } = useQuery({
+  const { data, isFetching, error, refetch } = useQuery({
     queryKey: ['global-search', query],
     queryFn: () => apiRequest(`/ops/search?q=${encodeURIComponent(query.trim())}`),
     enabled: query.trim().length >= 2,
@@ -32,10 +32,11 @@ export default function GlobalSearchScreen() {
     <ScreenContainer>
       <ModuleHeader
         code="HM"
-        title="Global Search"
-        subtitle="Search projects, repositories, services, and incidents"
+        title="Global search"
         showBack
       />
+
+      <SignalIntro eyebrow="Search" title="Search your workspace" description="Find projects, repositories, services, and incidents you can access." />
 
       <TextInput
         value={query}
@@ -55,8 +56,10 @@ export default function GlobalSearchScreen() {
       />
 
       {isFetching ? <LoadingState message="Searching PocketOps..." /> : null}
+      {!isFetching && error ? <ErrorState message={error.message} onRetry={refetch} /> : null}
+      {query.trim().length < 2 ? <EmptyState icon="search-outline" title="Search your workspace" description="Enter at least two characters to find projects, repositories, services, and incidents." /> : null}
 
-      {!isFetching && query.trim().length >= 2 && !hasResults ? (
+      {!isFetching && !error && query.trim().length >= 2 && !hasResults ? (
         <EmptyState
           icon="search-outline"
           title="No Matching Resources"
@@ -117,5 +120,5 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     fontSize: 15,
   },
-  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  rowBetween: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center', justifyContent: 'space-between' },
 });

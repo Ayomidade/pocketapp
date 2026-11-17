@@ -1,4 +1,6 @@
 import * as SQLite from 'expo-sqlite';
+import * as Crypto from 'expo-crypto';
+import { encryptDraftContent, decryptDraftContent } from './draftCrypto';
 import { getOrCreateDraftKey } from './tokenStorage';
 
 let dbPromise = null;
@@ -25,36 +27,15 @@ async function getDb() {
   return dbPromise;
 }
 
-// Symmetric stream cipher using the 256-bit SecureStore-backed key
-function xorCipher(text, hexKey) {
-  const keyBytes = [];
-  for (let i = 0; i < hexKey.length; i += 2) {
-    keyBytes.push(parseInt(hexKey.slice(i, i + 2), 16));
+async function decryptRow(db, row, key) {
+  const { content, legacy } = decryptDraftContent(row.cipher_content, key, row.id, row.base_sha);
+  if (legacy) {
+    const nonce = await Crypto.getRandomBytesAsync(24);
+    const encrypted = encryptDraftContent(content, key, nonce, row.id, row.base_sha);
+    // Do not replace a draft that changed since it was read.
+    await db.runAsync('UPDATE local_drafts SET cipher_content = ? WHERE id = ? AND cipher_content = ?', [encrypted, row.id, row.cipher_content]);
   }
-  const encoder = new TextEncoder();
-  const input = encoder.encode(text);
-  const out = new Uint8Array(input.length);
-  for (let i = 0; i < input.length; i += 1) {
-    out[i] = input[i] ^ keyBytes[i % keyBytes.length];
-  }
-  let bin = '';
-  for (let i = 0; i < out.length; i += 1) {
-    bin += String.fromCharCode(out[i]);
-  }
-  return btoa(bin);
-}
-
-function xorDecipher(b64, hexKey) {
-  const keyBytes = [];
-  for (let i = 0; i < hexKey.length; i += 2) {
-    keyBytes.push(parseInt(hexKey.slice(i, i + 2), 16));
-  }
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i += 1) {
-    out[i] = bin.charCodeAt(i) ^ keyBytes[i % keyBytes.length];
-  }
-  return new TextDecoder().decode(out);
+  return content;
 }
 
 export function buildDraftId(userId, repoId, branch, filePath) {
@@ -73,7 +54,8 @@ export async function saveEncryptedDraft({
   const db = await getDb();
   const key = await getOrCreateDraftKey();
   const id = buildDraftId(userId, repoId, branch, filePath);
-  const cipherContent = xorCipher(content, key);
+  const nonce = await Crypto.getRandomBytesAsync(24);
+  const cipherContent = encryptDraftContent(content, key, nonce, id, baseSha || '');
   const updatedAt = Date.now();
 
   await db.runAsync(
@@ -93,7 +75,7 @@ export async function listEncryptedDrafts(userId) {
     `SELECT * FROM local_drafts WHERE user_id = ? ORDER BY updated_at DESC`,
     [userId]
   );
-  return rows.map((row) => ({
+  return Promise.all(rows.map(async (row) => ({
     id: row.id,
     userId: row.user_id,
     repoId: row.repo_id,
@@ -101,9 +83,9 @@ export async function listEncryptedDrafts(userId) {
     branch: row.branch,
     filePath: row.file_path,
     baseSha: row.base_sha,
-    content: xorDecipher(row.cipher_content, key),
+    content: await decryptRow(db, row, key),
     updatedAt: row.updated_at,
-  }));
+  })));
 }
 
 export async function getEncryptedDraft(userId, repoId, branch, filePath) {
@@ -120,7 +102,7 @@ export async function getEncryptedDraft(userId, repoId, branch, filePath) {
     branch: row.branch,
     filePath: row.file_path,
     baseSha: row.base_sha,
-    content: xorDecipher(row.cipher_content, key),
+    content: await decryptRow(db, row, key),
     updatedAt: row.updated_at,
   };
 }
@@ -129,5 +111,3 @@ export async function deleteEncryptedDraft(id) {
   const db = await getDb();
   await db.runAsync(`DELETE FROM local_drafts WHERE id = ?`, [id]);
 }
-
-export { xorCipher, xorDecipher };

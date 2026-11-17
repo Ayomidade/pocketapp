@@ -31,18 +31,85 @@ npm run dev      # Express API on :4000
 npm run worker   # BullMQ push + health check worker
 ```
 
-### 3. Mobile Setup
+### 3. Start Metro for the mobile app
+
+In a separate terminal, start the Expo Metro server and leave it running while testing the debug app:
+
 ```bash
-cd mobile
-npm install
-npx expo start
+cd ~/Desktop/pocketapp/mobile
+export EXPO_PUBLIC_API_URL="http://YOUR_COMPUTER_WIFI_IP:4000/api/v1"
+npx expo start --dev-client --localhost
 ```
+
+Replace `YOUR_COMPUTER_WIFI_IP` with the computer's Wi-Fi IP address. For a phone connected through Android debugging, run `adb -s PHONE_SERIAL reverse tcp:8081 tcp:8081` so the app can reach Metro. See the local Android instructions below for setup and installation.
 
 ### 4. Android APK via EAS
 ```bash
 cd mobile
 npx eas build --platform android --profile preview
 ```
+
+### 5. Build and install on an Android phone locally
+
+These commands build a **debug APK**. It needs Metro running on the computer to load the JavaScript. Install Android Studio or the Android SDK, Android platform tools (`adb`), Java 17, and the project dependencies first. Run each command on its own line. The commands below assume the repository is at `~/Desktop/pocketapp` and the Android SDK is at `~/Android/Sdk`; adjust the paths if yours differ.
+
+1. From the repository root, install dependencies and start PostgreSQL and Redis. Configure the root `.env` first; its database and Redis URLs must match `docker-compose.yml`.
+
+   ```bash
+   cd ~/Desktop/pocketapp
+   npm ci
+   docker compose up -d postgres redis
+   docker compose ps
+   npm run migrate
+   ```
+
+2. In a terminal, start the API and leave it running:
+
+   ```bash
+   cd ~/Desktop/pocketapp
+   npm run dev:server
+   ```
+
+   To run background jobs, start `npm run dev:worker` from the repository root in another terminal.
+
+3. Connect the phone with USB debugging or pair it using Android wireless debugging. In another terminal, set the SDK path and list connected devices:
+
+   ```bash
+   export ANDROID_HOME="$HOME/Android/Sdk"
+   export PATH="$ANDROID_HOME/platform-tools:$PATH"
+   adb devices -l
+   ```
+
+   The phone must show `device`. If it says `unauthorized`, unlock the phone and accept the debugging prompt. If more than one device or emulator is listed, use the phone's serial from the first column with every `adb -s` command below. A wireless serial looks like `192.168.1.20:12345`; a USB serial looks different.
+
+4. Build the APK. This example builds for an ARM64 phone; check yours with `adb -s PHONE_SERIAL shell getprop ro.product.cpu.abi` and substitute its ABI if necessary.
+
+   ```bash
+   cd ~/Desktop/pocketapp/mobile/android
+   ./gradlew app:assembleDebug -x lint -x test --max-workers=2 -PreactNativeArchitectures=arm64-v8a
+   ```
+
+   The APK is written to `mobile/android/app/build/outputs/apk/debug/app-debug.apk`. The first build may download dependencies and take several minutes.
+
+5. Install the APK. Replace `PHONE_SERIAL` with the serial from `adb devices -l`:
+
+   ```bash
+   cd ~/Desktop/pocketapp
+   adb -s PHONE_SERIAL install -r mobile/android/app/build/outputs/apk/debug/app-debug.apk
+   adb -s PHONE_SERIAL reverse tcp:8081 tcp:8081
+   ```
+
+   `-r` updates an existing compatible installation without clearing its app data. If Android reports insufficient storage, free space on the phone and retry the install. If the signing certificate differs, Android may refuse the update; investigate before uninstalling, since uninstalling removes local app data.
+
+6. Start Metro in a separate terminal and leave it running. First find your computer's Wi-Fi IP with `hostname -I` or `ip -4 addr show`. Replace `YOUR_COMPUTER_WIFI_IP` with the address the phone can reach; do not use `localhost` for the API URL on a physical phone.
+
+   ```bash
+   cd ~/Desktop/pocketapp/mobile
+   export EXPO_PUBLIC_API_URL="http://YOUR_COMPUTER_WIFI_IP:4000/api/v1"
+   npx expo start --dev-client --localhost
+   ```
+
+   Open PocketOps on the phone. The `adb reverse` command lets the phone reach Metro at port 8081 while debugging is connected. Repeat it after reconnecting the device if necessary. The phone must also be able to reach the API over the network; GitHub sign-in additionally requires the configured OAuth callback to be reachable by the phone's browser.
 
 ## Verification
 ```bash

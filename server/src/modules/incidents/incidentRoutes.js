@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const express = require('express');
 const { z } = require('zod');
-const { Incident, IncidentEvent, IncidentResource, HealthCheck } = require('../../database/models');
+const { Incident, IncidentEvent, IncidentResource, HealthCheck, Service, AuthorizedRepository } = require('../../database/models');
 const { requireAuth, validateBody } = require('../../middleware/auth');
 const { idempotencyMiddleware } = require('../../middleware/idempotency');
 const { emitNotification } = require('../notifications/notificationService');
@@ -215,6 +215,12 @@ router.post('/:id/resources', validateBody(linkResourceSchema), async (req, res,
     if (!incident) throw new NotFoundError('Incident not found');
 
     const { resourceType, resourceRef, label, metadata } = req.validatedBody;
+    if (resourceType === 'service' || resourceType === 'repository') {
+      if (!z.string().uuid().safeParse(resourceRef).success) throw new NotFoundError('Resource not found');
+      const model = resourceType === 'service' ? Service : AuthorizedRepository;
+      const owned = await model.findOne({ where: { id: resourceRef, userId: req.user.id } });
+      if (!owned) throw new NotFoundError('Resource not found');
+    }
     const [resource] = await IncidentResource.findOrCreate({
       where: { incidentId: incident.id, resourceType, resourceRef },
       defaults: { id: crypto.randomUUID(), incidentId: incident.id, resourceType, resourceRef, label, metadataJson: metadata || null },

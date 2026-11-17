@@ -6,6 +6,7 @@ const {
   GithubInstallation,
   AuthorizedRepository,
   RenderConnection,
+  OAuthState,
 } = require('../../database/models');
 const { requireAuth, validateBody } = require('../../middleware/auth');
 const { encryptSecret, decryptSecret, generateStateToken } = require('../../utils/crypto');
@@ -68,6 +69,11 @@ router.get('/overview', async (req, res, next) => {
 router.post('/github/install-url', async (req, res, next) => {
   try {
     const state = generateStateToken();
+    await OAuthState.create({
+      id: crypto.randomUUID(), state, codeVerifier: generateStateToken(),
+      redirectUri: 'pocketops://github/install', purpose: 'github_install',
+      userId: req.user.id, expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+    });
     res.json({ installUrl: buildGithubAppInstallUrl(state), state });
   } catch (err) {
     next(err);
@@ -76,16 +82,27 @@ router.post('/github/install-url', async (req, res, next) => {
 
 const verifyInstallSchema = z.object({
   installationId: z.coerce.number().int().positive(),
+  state: z.string().min(1).optional(),
 });
 
 router.post('/github/installations/verify', validateBody(verifyInstallSchema), async (req, res, next) => {
   try {
+    let installState = null;
+    if (req.validatedBody.state) {
+      installState = await OAuthState.findOne({ where: { state: req.validatedBody.state, userId: req.user.id, purpose: 'github_install', consumedAt: null } });
+      if (!installState || new Date(installState.expiresAt) <= new Date()) throw new BadRequestError('Installation session expired or invalid. Please start again.');
+    }
     const githubConn = await GithubConnection.findOne({ where: { userId: req.user.id } });
     if (!githubConn || githubConn.status !== 'active') {
       throw new BadRequestError('Active GitHub OAuth connection is required before verifying an installation');
     }
     const userAccessToken = decryptSecret(githubConn.encryptedAccessToken);
     const verified = await verifyAndFetchInstallation(req.validatedBody.installationId, userAccessToken);
+
+    if (installState) {
+      const [updated] = await OAuthState.update({ consumedAt: new Date() }, { where: { id: installState.id, consumedAt: null } });
+      if (updated !== 1) throw new BadRequestError('Installation session has already been used.');
+    }
 
     const [installation] = await GithubInstallation.findOrCreate({
       where: { installationId: verified.installationId },

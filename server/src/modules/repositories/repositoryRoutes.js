@@ -10,6 +10,7 @@ const {
   getDirectoryContents,
   commitFileWithShaCheck,
   createPullRequest,
+  listPullRequests,
   getPullRequestAndChecks,
 } = require('../../integrations/githubClient');
 const { ForbiddenError, NotFoundError } = require('../../utils/errors');
@@ -20,13 +21,14 @@ router.use(requireAuth);
 
 async function requireAuthorizedRepo(userId, repoId) {
   const repo = await AuthorizedRepository.findOne({
-    where: { id: repoId, userId, active: true },
+    where: { id: repoId, userId },
     include: [{ model: GithubInstallation, as: 'installation' }],
   });
-  if (!repo) throw new NotFoundError('Authorized repository not found');
+  if (!repo) throw new NotFoundError('Repository not found', 'REPOSITORY_NOT_FOUND');
   if (!repo.installation || repo.installation.status !== 'verified') {
     throw new ForbiddenError('GitHub App installation is suspended or unverified', 'INSTALLATION_UNVERIFIED');
   }
+  if (!repo.active) throw new ForbiddenError('Repository access has been revoked', 'REPOSITORY_ACCESS_REVOKED');
   return repo;
 }
 
@@ -180,8 +182,17 @@ router.post(
   }
 );
 
+router.get('/:id/pulls', async (req, res, next) => {
+  try {
+    const repo = await requireAuthorizedRepo(req.user.id, req.params.id);
+    const pullRequests = await listPullRequests(repo.installation.installationId, repo.owner, repo.name);
+    res.json({ pullRequests });
+  } catch (err) { next(err); }
+});
+
 router.get('/:id/pulls/:pullNumber', async (req, res, next) => {
   try {
+    if (!/^\d+$/.test(req.params.pullNumber) || Number(req.params.pullNumber) < 1) throw new NotFoundError('Pull request not found');
     const repo = await requireAuthorizedRepo(req.user.id, req.params.id);
     const pullRequest = await getPullRequestAndChecks(
       repo.installation.installationId,

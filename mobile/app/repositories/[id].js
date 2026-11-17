@@ -23,6 +23,9 @@ export default function RepositoryExplorerScreen() {
   const [branch, setBranch] = useState('');
   const [currentPath, setCurrentPath] = useState('');
   const [branchModal, setBranchModal] = useState(false);
+  const [branchMode, setBranchMode] = useState('select');
+  const [section, setSection] = useState('overview');
+  const [fileDetails, setFileDetails] = useState(false);
   const [newBranchName, setNewBranchName] = useState('');
 
   const { data: repoData, isLoading: repoLoading, error: repoError, refetch: refetchRepo } = useQuery({
@@ -32,11 +35,12 @@ export default function RepositoryExplorerScreen() {
 
   const activeBranch = branch || repoData?.repository?.defaultBranch || 'main';
 
-  const { data: branchesData } = useQuery({
+  const branchesQuery = useQuery({
     queryKey: ['repo-branches', id],
     queryFn: () => apiRequest(`/repositories/${id}/branches`),
     enabled: Boolean(repoData?.repository),
   });
+  const pullsQuery = useQuery({ queryKey: ['repository-pulls', id], queryFn: () => apiRequest(`/repositories/${id}/pulls`), enabled: Boolean(repoData?.repository) && section === 'pulls' });
 
   const {
     data: contentsData,
@@ -49,7 +53,7 @@ export default function RepositoryExplorerScreen() {
       apiRequest(
         `/repositories/${id}/contents?path=${encodeURIComponent(currentPath)}&ref=${encodeURIComponent(activeBranch)}`
       ),
-    enabled: Boolean(repoData?.repository),
+    enabled: Boolean(repoData?.repository) && section === 'files',
   });
 
   const createBranchMutation = useMutation({
@@ -57,8 +61,9 @@ export default function RepositoryExplorerScreen() {
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['repo-branches', id] });
       setBranch(res.branch.name);
-      setNewBranchName('');
-      setBranchModal(false);
+    setNewBranchName('');
+    setBranchModal(false);
+    setCurrentPath('');
     },
   });
 
@@ -74,10 +79,10 @@ export default function RepositoryExplorerScreen() {
   if (repoError || !repoData?.repository) {
     return (
       <ScreenContainer>
-        <ModuleHeader code="RP" title="Access Recovery (RP-07)" showBack />
+        <ModuleHeader code="RP" title="Access Recovery" showBack />
         <ErrorState
           title="Repository Unavailable"
-          message={repoError?.message || 'GitHub App permission may have been revoked.'}
+          message={repoError?.code === 'INSTALLATION_UNVERIFIED' ? 'This GitHub App installation is suspended, removed, or has not been verified. Check the installation on GitHub, then reconnect it in Settings.' : repoError?.code === 'REPOSITORY_ACCESS_REVOKED' ? 'Repository access was removed. Restore access on GitHub and sync the installation in Settings.' : repoError?.code === 'REPOSITORY_NOT_FOUND' ? 'This repository is not in your authorized list. It may have been removed, or you may need to sync your GitHub installation.' : repoError?.message || 'Unable to load the repository. Check your connection and retry.'}
           onRetry={refetchRepo}
         />
         <SecondaryButton label="Check Connections" onPress={() => router.push('/settings')} />
@@ -112,6 +117,8 @@ export default function RepositoryExplorerScreen() {
 
       {/* RP-02 / RP-03 Branch Selector */}
       <SignalBanner>
+        <Text style={[typography.badge, { color: colors.primary, marginBottom: 6 }]}>GITHUB</Text>
+        <Text style={[typography.heading, { color: colors.textPrimary, marginBottom: 8 }]}>{section === 'files' ? 'Repository files' : section === 'pulls' ? 'Pull requests' : 'Repository overview'}</Text>
         <View style={styles.rowBetween}>
           <View>
             <Text style={[typography.caption, { color: colors.textSecondary }]}>ACTIVE BRANCH</Text>
@@ -119,11 +126,23 @@ export default function RepositoryExplorerScreen() {
               {activeBranch}
             </Text>
           </View>
-          <SecondaryButton label="Switch / New Branch" onPress={() => setBranchModal(true)} />
+          <SecondaryButton label="Switch branch" onPress={() => { setBranchMode('select'); setBranchModal(true); }} />
         </View>
       </SignalBanner>
 
-      {/* Breadcrumbs (RP-04) */}
+      <View style={styles.sections}>{['overview', 'files', 'pulls'].map((value) => <Pressable key={value} accessibilityRole="tab" accessibilityState={{ selected: section === value }} onPress={() => setSection(value)} style={[styles.section, { borderColor: section === value ? colors.primary : colors.border, borderRadius: radii.pill }]}><Text style={[typography.caption, { color: colors.textPrimary }]}>{value === 'pulls' ? 'Pull requests' : value === 'files' ? 'Files' : 'Overview'}</Text></Pressable>)}</View>
+      {section === 'overview' ? <>
+        <SignalCard><Text style={[typography.heading, { color: colors.textPrimary }]}>{repo.fullName}</Text><Text style={[typography.body, { color: colors.textSecondary, marginTop: 8 }]}>{repo.isPrivate ? 'Private' : 'Public'} · Default branch {repo.defaultBranch} · {repo.language || 'Language not specified'}</Text><Text style={[typography.caption, { color: colors.textSecondary, marginTop: 8 }]}>Last pushed: {repo.lastPushedAt ? new Date(repo.lastPushedAt).toLocaleString() : 'Unavailable'}</Text><PrimaryButton label="Browse files" onPress={() => setSection('files')} style={{ marginTop: 12 }} /><SecondaryButton label="View pull requests" onPress={() => setSection('pulls')} style={{ marginTop: 8 }} /></SignalCard>
+      </> : null}
+      {section === 'pulls' ? <>
+        {pullsQuery.isLoading ? <LoadingState message="Loading pull requests…" /> : null}
+        {pullsQuery.error ? <ErrorState message={pullsQuery.error.message} onRetry={pullsQuery.refetch} /> : null}
+        {pullsQuery.isSuccess && !pullsQuery.data.pullRequests.length ? <SignalCard><Text style={[typography.body, { color: colors.textSecondary }]}>No pull requests found.</Text></SignalCard> : null}
+        {(pullsQuery.data?.pullRequests || []).map((pr) => <SignalCard key={pr.number} onPress={() => router.push({ pathname: '/repositories/pull', params: { id: repo.id, number: pr.number, repo: repo.fullName } })}><Text style={[typography.bodyBold, { color: colors.textPrimary }]}>#{pr.number} · {pr.title}</Text><Text style={[typography.caption, { color: colors.textSecondary, marginTop: 6 }]}>{pr.state} · {pr.head} → {pr.base}</Text></SignalCard>)}
+      </> : null}
+
+      {/* Breadcrumbs */}
+      {section === 'files' ? <>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.crumbsRow}>
         <Pressable
           onPress={() => setCurrentPath('')}
@@ -148,7 +167,7 @@ export default function RepositoryExplorerScreen() {
       {contentsLoading ? <LoadingState message="Loading repository tree..." /> : null}
       {contentsError ? <ErrorState message={contentsError.message} onRetry={refetchContents} /> : null}
 
-      {/* Directory Entries (RP-04) */}
+      {/* Directory Entries */}
       {contentsData?.kind === 'dir'
         ? contentsData.entries.map((entry) => (
             <SignalCard
@@ -174,6 +193,7 @@ export default function RepositoryExplorerScreen() {
             </SignalCard>
           ))
         : null}
+      {contentsData?.kind === 'dir' && contentsData.entries.length === 0 ? <SignalCard><Text style={[typography.body, { color: colors.textSecondary }]}>This directory is empty.</Text></SignalCard> : null}
 
       {/* File Preview & Details (RP-05 / RP-06) */}
       {contentsData?.kind === 'file' ? (
@@ -191,8 +211,11 @@ export default function RepositoryExplorerScreen() {
             <PrimaryButton
               label="Edit File"
               onPress={() => handleOpenInEditor(contentsData.file)}
+              disabled={contentsData.file.editable === false || typeof contentsData.file.content !== 'string'}
               style={{ marginTop: 12 }}
             />
+            <SecondaryButton label="File details" onPress={() => setFileDetails(true)} style={{ marginTop: 8 }} />
+            {contentsData.file.editable === false || typeof contentsData.file.content !== 'string' ? <Text style={[typography.caption, { color: colors.warning, marginTop: 8 }]}>This file cannot be safely displayed as text. Open it on GitHub to view or edit it.</Text> : null}
           </SignalCard>
 
           <View
@@ -202,25 +225,38 @@ export default function RepositoryExplorerScreen() {
             ]}
           >
             <ScrollView horizontal>
-              <Text style={[typography.mono, { color: colors.codeText }]}>
-                {contentsData.file.content}
-              </Text>
+              <View accessibilityLabel="File preview">
+                {String(contentsData.file.content || '').split('\n').slice(0, 500).map((line, index) => (
+                  <View key={index} style={styles.previewLine}>
+                    <Text style={[typography.mono, styles.lineNumber, { color: colors.textSecondary }]}>{index + 1}</Text>
+                    <Text style={[typography.mono, { color: colors.codeText }]}>{line || ' '}</Text>
+                  </View>
+                ))}
+              </View>
             </ScrollView>
+            {String(contentsData.file.content || '').split('\n').length > 500 ? <Text style={[typography.caption, { color: colors.textSecondary, marginTop: 8 }]}>Preview limited to the first 500 lines. Open the editor to view the full file.</Text> : null}
           </View>
         </>
       ) : null}
+      </> : null}
+
+      <Modal visible={fileDetails} transparent animationType="slide" onRequestClose={() => setFileDetails(false)}><View style={styles.modalBackdrop}><View style={[styles.modalSheet, { backgroundColor: colors.surface, borderColor: colors.border }]}><Text style={[typography.title, { color: colors.textPrimary }]}>File details</Text>{contentsData?.file ? <Text style={[typography.body, { color: colors.textSecondary, marginTop: 12 }]}>{`Repository: ${repo.fullName}\nPath: ${contentsData.file.path}\nBranch: ${activeBranch}\nSize: ${contentsData.file.size} bytes\nRevision: ${contentsData.file.sha}`}</Text> : null}<SecondaryButton label="Close" onPress={() => setFileDetails(false)} style={{ marginTop: 16 }} /></View></View></Modal>
 
       {/* Branch Selector & Create Branch Modal (RP-03, GT-01, GT-02) */}
       <Modal visible={branchModal} transparent animationType="slide" onRequestClose={() => setBranchModal(false)}>
         <View style={styles.modalBackdrop}>
           <View style={[styles.modalSheet, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Text style={[typography.title, { color: colors.textPrimary }]}>Branches (GT-01)</Text>
+            <Text style={[typography.title, { color: colors.textPrimary }]}>{branchMode === 'select' ? 'Select branch' : 'Create branch'}</Text>
+            {branchMode === 'select' ? <>
+            {branchesQuery.isLoading ? <LoadingState message="Loading branches…" /> : null}
+            {branchesQuery.error ? <ErrorState message={branchesQuery.error.message} onRetry={branchesQuery.refetch} /> : null}
             <ScrollView style={{ maxHeight: 220, marginTop: 10 }}>
-              {(branchesData?.branches || []).map((b) => (
+              {(branchesQuery.data?.branches || []).map((b) => (
                 <Pressable
                   key={b.name}
                   onPress={() => {
                     setBranch(b.name);
+                    setCurrentPath('');
                     setBranchModal(false);
                   }}
                   style={[styles.branchItem, { borderColor: colors.border, borderRadius: radii.pill }]}
@@ -230,9 +266,10 @@ export default function RepositoryExplorerScreen() {
                 </Pressable>
               ))}
             </ScrollView>
-
+            <SecondaryButton label="Create branch" onPress={() => setBranchMode('create')} style={{ marginTop: 8 }} />
+            </> : <>
             <Text style={[typography.caption, { color: colors.textSecondary, marginTop: 14 }]}>
-              CREATE FIX BRANCH FROM {activeBranch} (GT-02)
+              CREATE FIX BRANCH FROM {activeBranch}
             </Text>
             <TextInput
               value={newBranchName}
@@ -257,6 +294,9 @@ export default function RepositoryExplorerScreen() {
               }
               style={{ marginTop: 10 }}
             />
+            {createBranchMutation.error ? <ErrorState message={createBranchMutation.error.message} /> : null}
+            <SecondaryButton label="Back to branches" disabled={createBranchMutation.isPending} onPress={() => setBranchMode('select')} style={{ marginTop: 8 }} />
+            </>}
             <SecondaryButton label="Close" onPress={() => setBranchModal(false)} style={{ marginTop: 8 }} />
           </View>
         </View>
@@ -266,7 +306,9 @@ export default function RepositoryExplorerScreen() {
 }
 
 const styles = StyleSheet.create({
-  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  rowBetween: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  sections: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 },
+  section: { borderWidth: 1, minHeight: 44, paddingHorizontal: 14, justifyContent: 'center' },
   crumbsRow: { flexGrow: 0, marginBottom: 12 },
   crumbPill: {
     borderWidth: 1,
@@ -279,6 +321,8 @@ const styles = StyleSheet.create({
   entryCard: { paddingVertical: 12 },
   entryLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   previewBox: { borderWidth: 1, padding: 14, marginBottom: 20 },
+  previewLine: { flexDirection: 'row', alignItems: 'flex-start' },
+  lineNumber: { minWidth: 38, textAlign: 'right', paddingRight: 12 },
   modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' },
   modalSheet: { padding: 20, borderTopLeftRadius: 20, borderTopRightRadius: 20, borderTopWidth: 1 },
   branchItem: {
