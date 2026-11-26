@@ -58,7 +58,7 @@ export function DashboardContent({ data, dataUpdatedAt, isLoading, error, refetc
           />
         ) : null}
 
-        {data ? <SignalBanner>
+        {data ? <SignalBanner style={{ minHeight: 120 }}>
           <Text style={[typography.badge, { color: colors.primary }]}>{activeIncidents.length ? 'ACTIVE INCIDENTS' : 'YOUR WORKSPACE'}</Text>
           <Text style={[typography.title, { color: colors.textPrimary, marginTop: 8 }]}>{activeIncidents.length ? 'Production needs attention' : data.isFirstUse ? 'Set up your workspace' : 'Your operational overview'}</Text>
           <Text style={[typography.caption, { color: colors.textSecondary, marginTop: 8 }]}>{activeIncidents.length ? `${activeIncidents.length} active ${activeIncidents.length === 1 ? 'incident' : 'incidents'} to review.` : 'Review incidents, service health, and recent deployments.'}</Text>
@@ -261,7 +261,7 @@ export function DashboardContent({ data, dataUpdatedAt, isLoading, error, refetc
 }
 
 const styles = StyleSheet.create({
-  scrollPad: { paddingHorizontal: 18, paddingBottom: 32, maxWidth: 640, width: '100%', alignSelf: 'center' },
+  scrollPad: { paddingLeft: 18, paddingRight: 31, paddingBottom: 32, maxWidth: 640, width: '100%', alignSelf: 'center' },
   headerActions: { flexDirection: 'row', gap: 8 },
   iconBtn: {
     minWidth: 48,

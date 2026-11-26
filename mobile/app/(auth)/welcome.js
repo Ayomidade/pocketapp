@@ -97,11 +97,11 @@ export default function WelcomeScreen() {
 export function WelcomeContent({ onSignIn, loading = false }) {
   const { colors, typography } = useTheme();
   return (
-    <ScreenContainer>
+    <ScreenContainer style={{ paddingRight: 31 }}>
       <ModuleHeader code="ON" title="Welcome" />
-      <SignalBanner>
+      <SignalBanner style={{ minHeight: 144 }}>
         <Text style={[typography.badge, { color: colors.primary }]}>SECURE ACCESS</Text>
-        <Text style={[typography.title, { color: colors.textPrimary, marginTop: 8 }]}>
+        <Text style={[typography.title, { color: colors.textPrimary, marginTop: 8, maxWidth: 280 }]}>
           Your workspace, wherever you are
         </Text>
         <Text style={[typography.caption, { color: colors.textSecondary, marginTop: 8 }]}>
